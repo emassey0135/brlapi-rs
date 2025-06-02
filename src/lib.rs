@@ -20,6 +20,8 @@ enum PacketType {
   Error,
   #[brw(magic(b"\0\0\0E"))]
   Exception,
+  #[brw(magic(b"\0\0\0k"))]
+  Key,
   #[brw(magic(b"\0\0\0v"))]
   Version,
   #[brw(magic(b"\0\0\0a"))]
@@ -46,14 +48,22 @@ enum PacketData {
   #[br(pre_assert(size == 0))]
   AckResponse,
   #[br(pre_assert(ty == PacketType::Error))]
-  #[br(assert(size == 4))]
-  ErrorResponse { error: u32 },
+  #[br(assert(size as usize == 8+packet_data.len()))]
+  ErrorResponse {
+    code: u32,
+    packet_type: PacketType,
+    #[br(count(size-8))]
+    packet_data: Vec<u8>,
+  },
   #[br(pre_assert(ty == PacketType::Exception))]
   #[br(assert(size as usize == packet.len()))]
   ExceptionResponse {
     #[br(count(size))]
     packet: Vec<u8>,
   },
+  #[br(pre_assert(ty == PacketType::Key))]
+  #[br(assert(size == 8))]
+  Key { key: u64 },
   #[br(pre_assert(ty == PacketType::Version))]
   #[br(assert(size == 4))]
   Version { version: u32 },
@@ -116,8 +126,13 @@ impl PacketData {
   fn size(&self) -> usize {
     match self {
       PacketData::AckResponse => 0,
-      PacketData::ErrorResponse { error: _ } => 4,
+      PacketData::ErrorResponse {
+        code: _,
+        packet_type: _,
+        packet_data,
+      } => 8 + packet_data.len(),
       PacketData::ExceptionResponse { packet } => packet.len(),
+      PacketData::Key { key: _ } => 8,
       PacketData::Version { version: _ } => 4,
       PacketData::AuthRequest { auth_types } => auth_types.len() / 4,
       PacketData::AuthResponse { auth_type: _, key } => key.len() + 4,
