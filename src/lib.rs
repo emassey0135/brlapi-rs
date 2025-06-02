@@ -14,6 +14,12 @@ enum AuthType {
 #[brw(big)]
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 enum PacketType {
+  #[brw(magic(b"\0\0\0A"))]
+  Ack,
+  #[brw(magic(b"\0\0\0e"))]
+  Error,
+  #[brw(magic(b"\0\0\0E"))]
+  Exception,
   #[brw(magic(b"\0\0\0v"))]
   Version,
   #[brw(magic(b"\0\0\0a"))]
@@ -24,11 +30,27 @@ enum PacketType {
   GetModelId,
   #[brw(magic(b"\0\0\0s"))]
   GetDisplaySize,
+  #[brw(magic(b"\0\0\0t"))]
+  EnterTtyMode,
+  SetFocus,
+  LeaveTtyMode,
 }
 #[binrw]
 #[brw(big, import(size: u32, ty: PacketType))]
 #[derive(Debug, PartialEq, Eq, Clone)]
 enum PacketData {
+  #[br(pre_assert(ty == PacketType::Ack))]
+  #[br(pre_assert(size == 0))]
+  AckResponse,
+  #[br(pre_assert(ty == PacketType::Error))]
+  #[brw(assert(size == 4))]
+  ErrorResponse { error: u32 },
+  #[br(pre_assert(ty == PacketType::Exception))]
+  #[brw(assert(size as usize == packet.len()))]
+  ExceptionResponse {
+    #[br(count(size))]
+    packet: Vec<u8>,
+  },
   #[br(pre_assert(ty == PacketType::Version))]
   #[brw(assert(size == 4))]
   Version { version: u32 },
@@ -64,6 +86,26 @@ enum PacketData {
   #[br(pre_assert(ty == PacketType::GetDisplaySize))]
   #[brw(assert(size == 8))]
   GetDisplaySizeResponse { width: u32, height: u32 },
+  #[br(pre_assert(ty == PacketType::EnterTtyMode))]
+  #[brw(assert(size == 8+ttys_len+driver_len))]
+  #[br(assert(ttys_len as usize == ttys.len()))]
+  #[bw(assert(*ttys_len as usize == ttys.len()))]
+  #[br(assert(driver_len as usize == driver.len()))]
+  #[bw(assert(*driver_len as usize == driver.len()))]
+  EnterTtyModeRequest {
+    ttys_len: u32,
+    #[br(count(ttys_len))]
+    ttys: Vec<u32>,
+    driver_len: u32,
+    #[br(count(driver_len))]
+    driver: Vec<u8>,
+  },
+  #[br(pre_assert(ty == PacketType::SetFocus))]
+  #[brw(assert(size == 4))]
+  SetFocusRequest { tty: u32 },
+  #[br(pre_assert(ty == PacketType::LeaveTtyMode))]
+  #[br(pre_assert(size == 0))]
+  LeaveTtyModeRequest,
 }
 #[binrw]
 #[brw(big)]
