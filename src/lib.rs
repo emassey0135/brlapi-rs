@@ -81,6 +81,12 @@ enum PacketType {
   AcceptKeyRanges,
   #[brw(magic(b"\0\0\0w"))]
   Write,
+  #[brw(magic(b"\0\0\0*"))]
+  EnterRawMode,
+  #[brw(magic(b"\0\0\0#"))]
+  LeaveRawMode,
+  #[brw(magic(b"\0\0\0p"))]
+  Packet,
 }
 fn calculate_write_flags(
   display_number: &Option<u32>,
@@ -233,6 +239,22 @@ enum PacketData {
     #[br(count(charset_len))]
     charset: Option<Vec<u8>>,
   },
+  #[br(pre_assert(ty == PacketType::EnterRawMode))]
+  #[brw(magic(0xdeadbeefu64))]
+  EnterRawModeRequest {
+    #[br(temp)]
+    #[bw(calc(driver.len() as u8))]
+    driver_len: u8,
+    #[br(count(driver_len))]
+    driver: Vec<u8>,
+  },
+  #[br(pre_assert(ty == PacketType::LeaveRawMode))]
+  LeaveRawModeRequest,
+  #[br(pre_assert(ty == PacketType::Packet))]
+  Packet {
+    #[br(count(size))]
+    packet: Vec<u8>,
+  },
 }
 impl PacketData {
   fn size(&self) -> usize {
@@ -295,6 +317,9 @@ impl PacketData {
         }
         size
       }
+      PacketData::EnterRawModeRequest { driver } => 8 + driver.len(),
+      PacketData::LeaveRawModeRequest => 0,
+      PacketData::Packet { packet } => packet.len(),
     }
   }
 }
