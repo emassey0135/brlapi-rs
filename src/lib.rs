@@ -87,6 +87,12 @@ enum PacketType {
   LeaveRawMode,
   #[brw(magic(b"\0\0\0p"))]
   Packet,
+  #[brw(magic(b"\0\0\0S"))]
+  SuspendDriver,
+  #[brw(magic(b"\0\0\0R"))]
+  ResumeDriver,
+  #[brw(magic(b"\0\0\0Z"))]
+  Synchronize,
 }
 fn calculate_write_flags(
   display_number: &Option<u32>,
@@ -255,6 +261,19 @@ enum PacketData {
     #[br(count(size))]
     packet: Vec<u8>,
   },
+  #[br(pre_assert(ty == PacketType::SuspendDriver))]
+  #[brw(magic(0xdeadbeefu64))]
+  SuspendDriverRequest {
+    #[br(temp)]
+    #[bw(calc(driver.len() as u8))]
+    driver_len: u8,
+    #[br(count(driver_len))]
+    driver: Vec<u8>,
+  },
+  #[br(pre_assert(ty == PacketType::ResumeDriver))]
+  ResumeDriverRequest,
+  #[br(pre_assert(ty == PacketType::SynchronizeDriver))]
+  SynchronizeDriverRequest,
 }
 impl PacketData {
   fn size(&self) -> usize {
@@ -320,6 +339,8 @@ impl PacketData {
       PacketData::EnterRawModeRequest { driver } => 8 + driver.len(),
       PacketData::LeaveRawModeRequest => 0,
       PacketData::Packet { packet } => packet.len(),
+      PacketData::SuspendDriverRequest { driver } => 8 + driver.len(),
+      PacketData::ResumeDriverRequest => 0,
     }
   }
 }
