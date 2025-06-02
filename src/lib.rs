@@ -32,7 +32,9 @@ enum PacketType {
   GetDisplaySize,
   #[brw(magic(b"\0\0\0t"))]
   EnterTtyMode,
+  #[brw(magic(b"\0\0\0F"))]
   SetFocus,
+  #[brw(magic(b"\0\0\0L"))]
   LeaveTtyMode,
 }
 #[binrw]
