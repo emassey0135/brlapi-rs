@@ -1,4 +1,5 @@
 use binrw::{NullString, binrw};
+use bitflags::bitflags;
 #[binrw]
 #[brw(big, repr(u32))]
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
@@ -34,6 +35,18 @@ enum AuthType {
   #[brw(magic(b"\0\0\0C"))]
   Credentials,
 }
+bitflags! {
+  #[derive(Debug, PartialEq, Eq, Clone)]
+  struct WriteFlags: u32 {
+    const DisplayNumber = 1;
+    const Region = 1 << 1;
+    const Text = 1 << 2;
+    const And = 1 << 3;
+    const Or = 1 << 4;
+    const Cursor = 1 << 5;
+    const Charset = 1 << 6;
+  }
+}
 #[binrw]
 #[brw(big)]
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
@@ -66,17 +79,51 @@ enum PacketType {
   IgnoreKeyRanges,
   #[brw(magic(b"\0\0\0u"))]
   AcceptKeyRanges,
+  #[brw(magic(b"\0\0\0w"))]
+  Write,
+}
+fn calculate_write_flags(
+  display_number: &Option<u32>,
+  region: &Option<(u32, u32)>,
+  text: &Option<Vec<u8>>,
+  and: &Option<Vec<u8>>,
+  or: &Option<Vec<u8>>,
+  cursor: &Option<u32>,
+  charset: &Option<Vec<u8>>,
+) -> WriteFlags {
+  let mut flags = WriteFlags::empty();
+  if display_number.is_some() {
+    flags |= WriteFlags::DisplayNumber
+  }
+  if region.is_some() {
+    flags |= WriteFlags::Region
+  }
+  if text.is_some() {
+    flags |= WriteFlags::Text
+  }
+  if and.is_some() {
+    flags |= WriteFlags::And
+  }
+  if or.is_some() {
+    flags |= WriteFlags::Or
+  }
+  if cursor.is_some() {
+    flags |= WriteFlags::Cursor
+  }
+  if charset.is_some() {
+    flags |= WriteFlags::Charset
+  }
+  flags
 }
 #[binrw]
 #[brw(big)]
 #[br(import(size: u32, ty: PacketType))]
+#[br(assert(size as usize == self.size()))]
 #[derive(Debug, PartialEq, Eq, Clone)]
 enum PacketData {
   #[br(pre_assert(ty == PacketType::Ack))]
-  #[br(pre_assert(size == 0))]
   AckResponse,
   #[br(pre_assert(ty == PacketType::Error))]
-  #[br(assert(size as usize == 8+packet_data.len()))]
   ErrorResponse {
     code: ErrorCode,
     packet_type: PacketType,
@@ -84,19 +131,15 @@ enum PacketData {
     packet_data: Vec<u8>,
   },
   #[br(pre_assert(ty == PacketType::Exception))]
-  #[br(assert(size as usize == packet.len()))]
   ExceptionResponse {
     #[br(count(size))]
     packet: Vec<u8>,
   },
   #[br(pre_assert(ty == PacketType::Key))]
-  #[br(assert(size == 8))]
   Key { key: u64 },
   #[br(pre_assert(ty == PacketType::Version))]
-  #[br(assert(size == 4))]
   Version { version: u32 },
   #[br(pre_assert(ty == PacketType::Auth))]
-  #[br(assert(size as usize == auth_types.len()*4))]
   AuthRequest {
     #[br(count(size/4))]
     auth_types: Vec<AuthType>,
@@ -104,33 +147,23 @@ enum PacketData {
   #[br(pre_assert(ty == PacketType::Auth))]
   #[br(assert(auth_type == AuthType::Key))]
   #[bw(assert(*auth_type == AuthType::Key))]
-  #[br(assert(size as usize == key.len()+4))]
   AuthResponse {
     auth_type: AuthType,
     key: NullString,
   },
   #[br(pre_assert(ty == PacketType::GetDriverName))]
-  #[br(pre_assert(size == 0))]
   GetDriverNameRequest,
   #[br(pre_assert(ty == PacketType::GetDriverName))]
-  #[br(assert(size as usize == driver.len()))]
   GetDriverNameResponse { driver: NullString },
   #[br(pre_assert(ty == PacketType::GetModelId))]
-  #[br(pre_assert(size == 0))]
   GetModelIdRequest,
   #[br(pre_assert(ty == PacketType::GetModelId))]
-  #[br(assert(size as usize == model.len()))]
   GetModelIdResponse { model: NullString },
   #[br(pre_assert(ty == PacketType::GetDisplaySize))]
-  #[br(pre_assert(size == 0))]
   GetDisplaySizeRequest,
   #[br(pre_assert(ty == PacketType::GetDisplaySize))]
-  #[br(assert(size == 8))]
   GetDisplaySizeResponse { width: u32, height: u32 },
   #[br(pre_assert(ty == PacketType::EnterTtyMode))]
-  #[br(assert(size as usize == 8+ttys.len()+driver.len()))]
-  #[br(assert(ttys_len as usize == ttys.len()))]
-  #[br(assert(driver_len as usize == driver.len()))]
   EnterTtyModeRequest {
     #[br(temp)]
     #[bw(calc(ttys.len() as u32))]
@@ -144,22 +177,61 @@ enum PacketData {
     driver: Vec<u8>,
   },
   #[br(pre_assert(ty == PacketType::SetFocus))]
-  #[br(assert(size == 4))]
   SetFocusRequest { tty: u32 },
   #[br(pre_assert(ty == PacketType::LeaveTtyMode))]
-  #[br(pre_assert(size == 0))]
   LeaveTtyModeRequest,
   #[br(pre_assert(ty == PacketType::IgnoreKeyRanges))]
-  #[br(assert(size as usize == ranges.len()*16))]
   IgnoreKeyRangesRequest {
     #[br(count(size/16))]
     ranges: Vec<(u64, u64)>,
   },
   #[br(pre_assert(ty == PacketType::AcceptKeyRanges))]
-  #[br(assert(size as usize == ranges.len()*16))]
   AcceptKeyRangesRequest {
     #[br(count(size/16))]
     ranges: Vec<(u64, u64)>,
+  },
+  #[br(pre_assert(ty == PacketType::Write))]
+  WriteRequest {
+    #[br(map(|bits: u32| WriteFlags::from_bits_truncate(bits)))]
+    #[bw(map(|flags| flags.bits() as u32))]
+    #[br(temp)]
+    #[bw(calc(calculate_write_flags(display_number, region, text, and, or, cursor, charset)))]
+    flags: WriteFlags,
+    #[br(if(flags.contains(WriteFlags::DisplayNumber)))]
+    #[bw(if(WriteFlags::from_bits_truncate(flags).contains(WriteFlags::DisplayNumber)))]
+    display_number: Option<u32>,
+    #[br(if(flags.contains(WriteFlags::Region)))]
+    #[bw(if(WriteFlags::from_bits_truncate(flags).contains(WriteFlags::Region)))]
+    region: Option<(u32, u32)>,
+    #[br(if(flags.contains(WriteFlags::Text)))]
+    #[bw(if(WriteFlags::from_bits_truncate(flags).contains(WriteFlags::Text)))]
+    #[br(temp)]
+    #[bw(calc(text.as_ref().unwrap().len() as u32))]
+    text_len: u32,
+    #[br(if(flags.contains(WriteFlags::Text)))]
+    #[bw(if(WriteFlags::from_bits_truncate(flags).contains(WriteFlags::Text)))]
+    #[br(count(text_len))]
+    text: Option<Vec<u8>>,
+    #[br(if(flags.contains(WriteFlags::And)))]
+    #[bw(if(WriteFlags::from_bits_truncate(flags).contains(WriteFlags::And)))]
+    #[br(count(region.unwrap().1))]
+    and: Option<Vec<u8>>,
+    #[br(if(flags.contains(WriteFlags::Or)))]
+    #[bw(if(WriteFlags::from_bits_truncate(flags).contains(WriteFlags::Or)))]
+    #[br(count(region.unwrap().1))]
+    or: Option<Vec<u8>>,
+    #[br(if(flags.contains(WriteFlags::Cursor)))]
+    #[bw(if(WriteFlags::from_bits_truncate(flags).contains(WriteFlags::Cursor)))]
+    cursor: Option<u32>,
+    #[br(if(flags.contains(WriteFlags::Charset)))]
+    #[bw(if(WriteFlags::from_bits_truncate(flags).contains(WriteFlags::Charset)))]
+    #[br(temp)]
+    #[bw(calc(charset.as_ref().unwrap().len() as u32))]
+    charset_len: u32,
+    #[br(if(flags.contains(WriteFlags::Charset)))]
+    #[bw(if(WriteFlags::from_bits_truncate(flags).contains(WriteFlags::Charset)))]
+    #[br(count(charset_len))]
+    charset: Option<Vec<u8>>,
   },
 }
 impl PacketData {
@@ -190,6 +262,39 @@ impl PacketData {
       PacketData::LeaveTtyModeRequest => 0,
       PacketData::IgnoreKeyRangesRequest { ranges } => ranges.len() * 16,
       PacketData::AcceptKeyRangesRequest { ranges } => ranges.len() * 16,
+      PacketData::WriteRequest {
+        display_number,
+        region,
+        text,
+        and,
+        or,
+        cursor,
+        charset,
+      } => {
+        let mut size = 4;
+        if display_number.is_some() {
+          size += 4;
+        }
+        if region.is_some() {
+          size += 8;
+        }
+        if let Some(text) = text {
+          size += text.len();
+        }
+        if let Some(and) = and {
+          size += and.len();
+        }
+        if let Some(or) = or {
+          size += or.len();
+        }
+        if cursor.is_some() {
+          size += 4;
+        }
+        if let Some(charset) = charset {
+          size += charset.len();
+        }
+        size
+      }
     }
   }
 }

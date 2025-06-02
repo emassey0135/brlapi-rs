@@ -5,3 +5,4 @@ edition = "2024"
 
 [dependencies]
 binrw = "0.15.0"
+bitflags = { version = "2.9.1", features = ["std"] }
