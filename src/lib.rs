@@ -1,5 +1,29 @@
 use binrw::{NullString, binrw};
 #[binrw]
+#[brw(big, repr(u32))]
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+enum ErrorCode {
+  Success = 0,
+  NotEnoughMemory = 1,
+  TtyBusy = 2,
+  DeviceBusy = 3,
+  UnknownInstruction = 4,
+  IllegalInstruction = 5,
+  InvalidParameter = 6,
+  InvalidPacket = 7,
+  ConnectionRefused = 8,
+  OperationNotSupported = 9,
+  GetaddrinfoError = 10,
+  LibcError = 11,
+  UnknownTty = 12,
+  BadProtocolVersion = 13,
+  UnexpectedEof = 14,
+  EmptyKeyFile = 15,
+  DriverPacketTooLarge = 16,
+  AuthenticationFailed = 17,
+  ReadOnlyParameter = 18,
+}
+#[binrw]
 #[brw(big)]
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 enum AuthType {
@@ -38,6 +62,10 @@ enum PacketType {
   SetFocus,
   #[brw(magic(b"\0\0\0L"))]
   LeaveTtyMode,
+  #[brw(magic(b"\0\0\0m"))]
+  IgnoreKeyRanges,
+  #[brw(magic(b"\0\0\0u"))]
+  AcceptKeyRanges,
 }
 #[binrw]
 #[brw(big)]
@@ -50,7 +78,7 @@ enum PacketData {
   #[br(pre_assert(ty == PacketType::Error))]
   #[br(assert(size as usize == 8+packet_data.len()))]
   ErrorResponse {
-    code: u32,
+    code: ErrorCode,
     packet_type: PacketType,
     #[br(count(size-8))]
     packet_data: Vec<u8>,
@@ -121,6 +149,18 @@ enum PacketData {
   #[br(pre_assert(ty == PacketType::LeaveTtyMode))]
   #[br(pre_assert(size == 0))]
   LeaveTtyModeRequest,
+  #[br(pre_assert(ty == PacketType::IgnoreKeyRanges))]
+  #[br(assert(size as usize == ranges.len()*16))]
+  IgnoreKeyRangesRequest {
+    #[br(count(size/16))]
+    ranges: Vec<(u64, u64)>,
+  },
+  #[br(pre_assert(ty == PacketType::AcceptKeyRanges))]
+  #[br(assert(size as usize == ranges.len()*16))]
+  AcceptKeyRangesRequest {
+    #[br(count(size/16))]
+    ranges: Vec<(u64, u64)>,
+  },
 }
 impl PacketData {
   fn size(&self) -> usize {
@@ -148,6 +188,8 @@ impl PacketData {
       PacketData::EnterTtyModeRequest { ttys, driver } => 8 + ttys.len() + driver.len(),
       PacketData::SetFocusRequest { tty: _ } => 4,
       PacketData::LeaveTtyModeRequest => 0,
+      PacketData::IgnoreKeyRangesRequest { ranges } => ranges.len() * 16,
+      PacketData::AcceptKeyRangesRequest { ranges } => ranges.len() * 16,
     }
   }
 }
