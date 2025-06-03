@@ -81,6 +81,10 @@ enum PacketType {
   Exception,
   #[brw(magic(b"\0\0\0k"))]
   Key,
+  #[brw(magic(b"\0\0\0w"))]
+  Write,
+  #[brw(magic(b"\0\0\0p"))]
+  Packet,
   #[brw(magic(b"\0\0\0v"))]
   Version,
   #[brw(magic(b"\0\0\0a"))]
@@ -101,14 +105,10 @@ enum PacketType {
   IgnoreKeyRanges,
   #[brw(magic(b"\0\0\0u"))]
   AcceptKeyRanges,
-  #[brw(magic(b"\0\0\0w"))]
-  Write,
   #[brw(magic(b"\0\0\0*"))]
   EnterRawMode,
   #[brw(magic(b"\0\0\0#"))]
   LeaveRawMode,
-  #[brw(magic(b"\0\0\0p"))]
-  Packet,
   #[brw(magic(b"\0\0\0S"))]
   SuspendDriver,
   #[brw(magic(b"\0\0\0R"))]
@@ -178,6 +178,54 @@ enum PacketData {
   },
   #[br(pre_assert(ty == PacketType::Key))]
   Key { key: u64 },
+  #[br(pre_assert(ty == PacketType::Write))]
+  WriteRequest {
+    #[br(map(|bits: u32| WriteFlags::from_bits_truncate(bits)))]
+    #[bw(map(|flags| flags.bits()))]
+    #[br(temp)]
+    #[bw(calc(calculate_write_flags(display_number, region, text, and, or, cursor, charset)))]
+    flags: WriteFlags,
+    #[br(if(flags.contains(WriteFlags::DisplayNumber)))]
+    #[bw(if(WriteFlags::from_bits_truncate(flags).contains(WriteFlags::DisplayNumber)))]
+    display_number: Option<u32>,
+    #[br(if(flags.contains(WriteFlags::Region)))]
+    #[bw(if(WriteFlags::from_bits_truncate(flags).contains(WriteFlags::Region)))]
+    region: Option<(u32, u32)>,
+    #[br(if(flags.contains(WriteFlags::Text)))]
+    #[bw(if(WriteFlags::from_bits_truncate(flags).contains(WriteFlags::Text)))]
+    #[br(temp)]
+    #[bw(calc(text.as_ref().unwrap().len() as u32))]
+    text_len: u32,
+    #[br(if(flags.contains(WriteFlags::Text)))]
+    #[bw(if(WriteFlags::from_bits_truncate(flags).contains(WriteFlags::Text)))]
+    #[br(count(text_len))]
+    text: Option<Vec<u8>>,
+    #[br(if(flags.contains(WriteFlags::And)))]
+    #[bw(if(WriteFlags::from_bits_truncate(flags).contains(WriteFlags::And)))]
+    #[br(count(region.unwrap().1))]
+    and: Option<Vec<u8>>,
+    #[br(if(flags.contains(WriteFlags::Or)))]
+    #[bw(if(WriteFlags::from_bits_truncate(flags).contains(WriteFlags::Or)))]
+    #[br(count(region.unwrap().1))]
+    or: Option<Vec<u8>>,
+    #[br(if(flags.contains(WriteFlags::Cursor)))]
+    #[bw(if(WriteFlags::from_bits_truncate(flags).contains(WriteFlags::Cursor)))]
+    cursor: Option<u32>,
+    #[br(if(flags.contains(WriteFlags::Charset)))]
+    #[bw(if(WriteFlags::from_bits_truncate(flags).contains(WriteFlags::Charset)))]
+    #[br(temp)]
+    #[bw(calc(charset.as_ref().unwrap().len() as u32))]
+    charset_len: u32,
+    #[br(if(flags.contains(WriteFlags::Charset)))]
+    #[bw(if(WriteFlags::from_bits_truncate(flags).contains(WriteFlags::Charset)))]
+    #[br(count(charset_len))]
+    charset: Option<Vec<u8>>,
+  },
+  #[br(pre_assert(ty == PacketType::Packet))]
+  Packet {
+    #[br(count(size))]
+    packet: Vec<u8>,
+  },
   #[br(pre_assert(ty == PacketType::Version))]
   Version { version: u32 },
   #[br(pre_assert(ty == PacketType::Auth))]
@@ -231,49 +279,6 @@ enum PacketData {
     #[br(count(size/16))]
     ranges: Vec<(u64, u64)>,
   },
-  #[br(pre_assert(ty == PacketType::Write))]
-  WriteRequest {
-    #[br(map(|bits: u32| WriteFlags::from_bits_truncate(bits)))]
-    #[bw(map(|flags| flags.bits()))]
-    #[br(temp)]
-    #[bw(calc(calculate_write_flags(display_number, region, text, and, or, cursor, charset)))]
-    flags: WriteFlags,
-    #[br(if(flags.contains(WriteFlags::DisplayNumber)))]
-    #[bw(if(WriteFlags::from_bits_truncate(flags).contains(WriteFlags::DisplayNumber)))]
-    display_number: Option<u32>,
-    #[br(if(flags.contains(WriteFlags::Region)))]
-    #[bw(if(WriteFlags::from_bits_truncate(flags).contains(WriteFlags::Region)))]
-    region: Option<(u32, u32)>,
-    #[br(if(flags.contains(WriteFlags::Text)))]
-    #[bw(if(WriteFlags::from_bits_truncate(flags).contains(WriteFlags::Text)))]
-    #[br(temp)]
-    #[bw(calc(text.as_ref().unwrap().len() as u32))]
-    text_len: u32,
-    #[br(if(flags.contains(WriteFlags::Text)))]
-    #[bw(if(WriteFlags::from_bits_truncate(flags).contains(WriteFlags::Text)))]
-    #[br(count(text_len))]
-    text: Option<Vec<u8>>,
-    #[br(if(flags.contains(WriteFlags::And)))]
-    #[bw(if(WriteFlags::from_bits_truncate(flags).contains(WriteFlags::And)))]
-    #[br(count(region.unwrap().1))]
-    and: Option<Vec<u8>>,
-    #[br(if(flags.contains(WriteFlags::Or)))]
-    #[bw(if(WriteFlags::from_bits_truncate(flags).contains(WriteFlags::Or)))]
-    #[br(count(region.unwrap().1))]
-    or: Option<Vec<u8>>,
-    #[br(if(flags.contains(WriteFlags::Cursor)))]
-    #[bw(if(WriteFlags::from_bits_truncate(flags).contains(WriteFlags::Cursor)))]
-    cursor: Option<u32>,
-    #[br(if(flags.contains(WriteFlags::Charset)))]
-    #[bw(if(WriteFlags::from_bits_truncate(flags).contains(WriteFlags::Charset)))]
-    #[br(temp)]
-    #[bw(calc(charset.as_ref().unwrap().len() as u32))]
-    charset_len: u32,
-    #[br(if(flags.contains(WriteFlags::Charset)))]
-    #[bw(if(WriteFlags::from_bits_truncate(flags).contains(WriteFlags::Charset)))]
-    #[br(count(charset_len))]
-    charset: Option<Vec<u8>>,
-  },
   #[br(pre_assert(ty == PacketType::EnterRawMode))]
   #[brw(magic(0xdead_beefu64))]
   EnterRawModeRequest {
@@ -285,11 +290,6 @@ enum PacketData {
   },
   #[br(pre_assert(ty == PacketType::LeaveRawMode))]
   LeaveRawModeRequest,
-  #[br(pre_assert(ty == PacketType::Packet))]
-  Packet {
-    #[br(count(size))]
-    packet: Vec<u8>,
-  },
   #[br(pre_assert(ty == PacketType::SuspendDriver))]
   #[brw(magic(0xdead_beefu64))]
   SuspendDriverRequest {
