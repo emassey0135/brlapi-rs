@@ -169,6 +169,56 @@ pub enum BrailleCommand {
   Help,
   #[brw(magic(50u32))]
   Info,
+  #[brw(magic(51u32))]
+  LearnMode,
+  #[brw(magic(52u32))]
+  PreferencesMenu,
+  #[brw(magic(53u32))]
+  SavePreferences,
+  #[brw(magic(54u32))]
+  LoadPreferences,
+  #[brw(magic(55u32))]
+  MenuFirstItem,
+  #[brw(magic(56u32))]
+  MenuLastItem,
+  #[brw(magic(57u32))]
+  MenuPreviousItem,
+  #[brw(magic(58u32))]
+  MenuNextItem,
+  #[brw(magic(59u32))]
+  MenuPreviousSetting,
+  #[brw(magic(60u32))]
+  MenuNextSetting,
+  #[brw(magic(61u32))]
+  Mute,
+  #[brw(magic(62u32))]
+  SpeechHome,
+  #[brw(magic(63u32))]
+  SayLine,
+  #[brw(magic(64u32))]
+  SayFromTop,
+  #[brw(magic(65u32))]
+  SayToBottom,
+  #[brw(magic(66u32))]
+  DecreaseSpeechRate,
+  #[brw(magic(67u32))]
+  IncreaseSpeechRate,
+  #[brw(magic(68u32))]
+  DecreaseSpeechVolume,
+  #[brw(magic(69u32))]
+  IncreaseSpeechVolume,
+  #[brw(magic(70u32))]
+  PreviousVirtualTerminal,
+  #[brw(magic(71u32))]
+  NextVirtualTerminal,
+  #[brw(magic(72u32))]
+  ScreenCursorToCurrentLine,
+  #[brw(magic(73u32))]
+  Paste,
+  #[brw(magic(74u32))]
+  RestartBrailleDriver,
+  #[brw(magic(75u32))]
+  RestartSpeechDriver,
 }
 impl BrailleCommand {
   pub fn from_u32(value: u32) -> Self {
