@@ -1,3 +1,9 @@
+#![deny(clippy::all)]
+#![warn(clippy::pedantic)]
+#![allow(clippy::cast_possible_truncation)]
+#![allow(clippy::ref_option)]
+#![allow(clippy::trivially_copy_pass_by_ref)]
+#![allow(clippy::match_same_arms)]
 use binrw::{NullString, binrw};
 use bitflags::bitflags;
 #[binrw]
@@ -127,25 +133,25 @@ fn calculate_write_flags(
 ) -> WriteFlags {
   let mut flags = WriteFlags::empty();
   if display_number.is_some() {
-    flags |= WriteFlags::DisplayNumber
+    flags |= WriteFlags::DisplayNumber;
   }
   if region.is_some() {
-    flags |= WriteFlags::Region
+    flags |= WriteFlags::Region;
   }
   if text.is_some() {
-    flags |= WriteFlags::Text
+    flags |= WriteFlags::Text;
   }
   if and.is_some() {
-    flags |= WriteFlags::And
+    flags |= WriteFlags::And;
   }
   if or.is_some() {
-    flags |= WriteFlags::Or
+    flags |= WriteFlags::Or;
   }
   if cursor.is_some() {
-    flags |= WriteFlags::Cursor
+    flags |= WriteFlags::Cursor;
   }
   if charset.is_some() {
-    flags |= WriteFlags::Charset
+    flags |= WriteFlags::Charset;
   }
   flags
 }
@@ -154,6 +160,7 @@ fn calculate_write_flags(
 #[br(import(size: u32, ty: PacketType))]
 #[br(assert(size as usize == self.size()))]
 #[derive(Debug, PartialEq, Eq, Clone)]
+#[allow(clippy::cast_possible_truncation)]
 enum PacketData {
   #[br(pre_assert(ty == PacketType::Ack))]
   AckResponse,
@@ -227,7 +234,7 @@ enum PacketData {
   #[br(pre_assert(ty == PacketType::Write))]
   WriteRequest {
     #[br(map(|bits: u32| WriteFlags::from_bits_truncate(bits)))]
-    #[bw(map(|flags| flags.bits() as u32))]
+    #[bw(map(|flags| flags.bits()))]
     #[br(temp)]
     #[bw(calc(calculate_write_flags(display_number, region, text, and, or, cursor, charset)))]
     flags: WriteFlags,
@@ -268,7 +275,7 @@ enum PacketData {
     charset: Option<Vec<u8>>,
   },
   #[br(pre_assert(ty == PacketType::EnterRawMode))]
-  #[brw(magic(0xdeadbeefu64))]
+  #[brw(magic(0xdead_beefu64))]
   EnterRawModeRequest {
     #[br(temp)]
     #[bw(calc(driver.len() as u8))]
@@ -284,7 +291,7 @@ enum PacketData {
     packet: Vec<u8>,
   },
   #[br(pre_assert(ty == PacketType::SuspendDriver))]
-  #[brw(magic(0xdeadbeefu64))]
+  #[brw(magic(0xdead_beefu64))]
   SuspendDriverRequest {
     #[br(temp)]
     #[bw(calc(driver.len() as u8))]
@@ -299,7 +306,7 @@ enum PacketData {
   #[br(pre_assert(ty == PacketType::ParameterRequest))]
   ParameterRequest {
     #[br(map(|bits: u32| ParameterRequestFlags::from_bits_truncate(bits)))]
-    #[bw(map(|flags| flags.bits() as u32))]
+    #[bw(map(ParameterRequestFlags::bits))]
     flags: ParameterRequestFlags,
     parameter: u32,
     sub_parameter: u64,
@@ -307,7 +314,7 @@ enum PacketData {
   #[br(pre_assert(ty == PacketType::ParameterValue))]
   ParameterValue {
     #[br(map(|bits: u32| ParameterValueFlags::from_bits_truncate(bits)))]
-    #[bw(map(|flags| flags.bits() as u32))]
+    #[bw(map(ParameterValueFlags::bits))]
     flags: ParameterValueFlags,
     parameter: u32,
     sub_parameter: u64,
@@ -317,7 +324,7 @@ enum PacketData {
   #[br(pre_assert(ty == PacketType::ParameterUpdate))]
   ParameterUpdate {
     #[br(map(|bits: u32| ParameterValueFlags::from_bits_truncate(bits)))]
-    #[bw(map(|flags| flags.bits() as u32))]
+    #[bw(map(ParameterValueFlags::bits))]
     flags: ParameterValueFlags,
     parameter: u32,
     sub_parameter: u64,
