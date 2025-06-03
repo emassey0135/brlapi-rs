@@ -5,4 +5,7 @@ edition = "2024"
 
 [dependencies]
 binrw = "0.15.0"
+bitfield-struct = "0.11.0"
 bitflags = { version = "2.9.1", features = ["std"] }
+endian-num = { version = "0.2.0", features = ["linux-types"] }
+xkeysym = "0.2.1"

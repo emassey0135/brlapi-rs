@@ -4,12 +4,13 @@
 #![allow(clippy::ref_option)]
 #![allow(clippy::trivially_copy_pass_by_ref)]
 #![allow(clippy::match_same_arms)]
+pub mod keycode;
 use binrw::{NullString, binrw};
 use bitflags::bitflags;
 #[binrw]
 #[brw(big, repr(u32))]
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
-enum ErrorCode {
+pub enum ErrorCode {
   Success = 0,
   NotEnoughMemory = 1,
   TtyBusy = 2,
@@ -33,7 +34,7 @@ enum ErrorCode {
 #[binrw]
 #[brw(big)]
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
-enum AuthType {
+pub enum AuthType {
   #[brw(magic(b"\0\0\0N"))]
   None,
   #[brw(magic(b"\0\0\0K"))]
@@ -43,7 +44,7 @@ enum AuthType {
 }
 bitflags! {
   #[derive(Debug, PartialEq, Eq, Clone)]
-  struct WriteFlags: u32 {
+  pub struct WriteFlags: u32 {
     const DisplayNumber = 1;
     const Region = 1 << 1;
     const Text = 1 << 2;
@@ -55,7 +56,7 @@ bitflags! {
 }
 bitflags! {
   #[derive(Debug, PartialEq, Eq, Clone)]
-  struct ParameterRequestFlags: u32 {
+  pub struct ParameterRequestFlags: u32 {
     const Global = 1;
     const IncludeSelf = 1 << 1;
     const Get = 1 << 8;
@@ -65,14 +66,14 @@ bitflags! {
 }
 bitflags! {
   #[derive(Debug, PartialEq, Eq, Clone)]
-  struct ParameterValueFlags: u32 {
+  pub struct ParameterValueFlags: u32 {
     const Global = 1;
   }
 }
 #[binrw]
 #[brw(big)]
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
-enum PacketType {
+pub enum PacketType {
   #[brw(magic(b"\0\0\0A"))]
   Ack,
   #[brw(magic(b"\0\0\0e"))]
@@ -161,7 +162,7 @@ fn calculate_write_flags(
 #[br(assert(size as usize == self.size()))]
 #[derive(Debug, PartialEq, Eq, Clone)]
 #[allow(clippy::cast_possible_truncation)]
-enum PacketData {
+pub enum PacketData {
   #[br(pre_assert(ty == PacketType::Ack))]
   AckResponse,
   #[br(pre_assert(ty == PacketType::Error))]
@@ -423,7 +424,7 @@ impl PacketData {
 #[brw(big)]
 #[br(assert(size as usize == data.size()))]
 #[derive(Debug, PartialEq, Eq, Clone)]
-struct Packet {
+pub struct Packet {
   #[br(temp)]
   #[bw(calc(data.size() as u32))]
   size: u32,
