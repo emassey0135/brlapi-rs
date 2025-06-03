@@ -47,6 +47,22 @@ bitflags! {
     const Charset = 1 << 6;
   }
 }
+bitflags! {
+  #[derive(Debug, PartialEq, Eq, Clone)]
+  struct ParameterRequestFlags: u32 {
+    const Global = 1;
+    const IncludeSelf = 1 << 1;
+    const Get = 1 << 8;
+    const Subscribe = 1 << 9;
+    const Unsubscribe = 1 << 10;
+  }
+}
+bitflags! {
+  #[derive(Debug, PartialEq, Eq, Clone)]
+  struct ParameterValueFlags: u32 {
+    const Global = 1;
+  }
+}
 #[binrw]
 #[brw(big)]
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
@@ -93,6 +109,12 @@ enum PacketType {
   ResumeDriver,
   #[brw(magic(b"\0\0\0Z"))]
   Synchronize,
+  #[brw(magic(b"\0\0PR"))]
+  ParameterRequest,
+  #[brw(magic(b"\0\0PV"))]
+  ParameterValue,
+  #[brw(magic(b"\0\0PU"))]
+  ParameterUpdate,
 }
 fn calculate_write_flags(
   display_number: &Option<u32>,
@@ -272,8 +294,36 @@ enum PacketData {
   },
   #[br(pre_assert(ty == PacketType::ResumeDriver))]
   ResumeDriverRequest,
-  #[br(pre_assert(ty == PacketType::SynchronizeDriver))]
-  SynchronizeDriverRequest,
+  #[br(pre_assert(ty == PacketType::Synchronize))]
+  SynchronizeRequest,
+  #[br(pre_assert(ty == PacketType::ParameterRequest))]
+  ParameterRequest {
+    #[br(map(|bits: u32| ParameterRequestFlags::from_bits_truncate(bits)))]
+    #[bw(map(|flags| flags.bits() as u32))]
+    flags: ParameterRequestFlags,
+    parameter: u32,
+    sub_parameter: u64,
+  },
+  #[br(pre_assert(ty == PacketType::ParameterValue))]
+  ParameterValue {
+    #[br(map(|bits: u32| ParameterValueFlags::from_bits_truncate(bits)))]
+    #[bw(map(|flags| flags.bits() as u32))]
+    flags: ParameterValueFlags,
+    parameter: u32,
+    sub_parameter: u64,
+    #[br(count(size-16))]
+    value: Vec<u8>,
+  },
+  #[br(pre_assert(ty == PacketType::ParameterUpdate))]
+  ParameterUpdate {
+    #[br(map(|bits: u32| ParameterValueFlags::from_bits_truncate(bits)))]
+    #[bw(map(|flags| flags.bits() as u32))]
+    flags: ParameterValueFlags,
+    parameter: u32,
+    sub_parameter: u64,
+    #[br(count(size-16))]
+    value: Vec<u8>,
+  },
 }
 impl PacketData {
   fn size(&self) -> usize {
@@ -341,6 +391,24 @@ impl PacketData {
       PacketData::Packet { packet } => packet.len(),
       PacketData::SuspendDriverRequest { driver } => 8 + driver.len(),
       PacketData::ResumeDriverRequest => 0,
+      PacketData::SynchronizeRequest => 0,
+      PacketData::ParameterRequest {
+        flags: _,
+        parameter: _,
+        sub_parameter: _,
+      } => 16,
+      PacketData::ParameterValue {
+        flags: _,
+        parameter: _,
+        sub_parameter: _,
+        value,
+      } => 16 + value.len(),
+      PacketData::ParameterUpdate {
+        flags: _,
+        parameter: _,
+        sub_parameter: _,
+        value,
+      } => 16 + value.len(),
     }
   }
 }
