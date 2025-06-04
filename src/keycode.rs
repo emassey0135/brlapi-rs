@@ -1,6 +1,6 @@
-use binrw::{binrw, BinRead, BinWrite};
-use bitflags::bitflags;
+use binrw::{BinRead, BinWrite, binrw};
 use bitfield_struct::bitfield;
+use bitflags::bitflags;
 use std::io::Cursor;
 bitflags! {
   #[derive(Debug, PartialEq, Eq, Clone)]
@@ -427,6 +427,36 @@ pub enum BrailleCommand {
   SetKeyboardTable { index: u16 },
   #[brw(magic(23u16))]
   SetLanguageProfile { index: u16 },
+  #[brw(magic(24u16))]
+  RouteCursorToLine { row: u16 },
+  #[brw(magic(25u16))]
+  RefreshLine { row: u16 },
+  #[brw(magic(26u16))]
+  StartSelection { column: u16 },
+  #[brw(magic(27u16))]
+  EndSelection { column: u16 },
+  #[brw(magic(28u16))]
+  RouteSpeechCursorToCharacter { column: u16 },
+  #[brw(magic(30u16))]
+  SelectVirtualTerminal { terminal: u16 },
+  #[brw(magic(31u16))]
+  Alert { index: u16 },
+  #[brw(magic(34u16))]
+  PassDots { dots: u16 },
+  #[brw(magic(35u16))]
+  PassAtScanCode { code: u16 },
+  #[brw(magic(36u16))]
+  PassXtScanCode { code: u16 },
+  #[brw(magic(37u16))]
+  PassPs2ScanCode { code: u16 },
+  #[brw(magic(38u16))]
+  SwitchToCommandContext { context: u16 },
+  #[brw(magic(39u16))]
+  TouchAt { location: u16 },
+  #[brw(magic(40u16))]
+  ExecuteMacro { index: u16 },
+  #[brw(magic(41u16))]
+  ExecuteHostCommand { index: u16 },
 }
 impl BrailleCommand {
   pub fn from_u32(value: u32) -> Self {
