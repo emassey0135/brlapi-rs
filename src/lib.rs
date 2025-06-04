@@ -5,6 +5,7 @@
 #![allow(clippy::trivially_copy_pass_by_ref)]
 #![allow(clippy::match_same_arms)]
 pub mod keycode;
+use crate::keycode::Keycode;
 use binrw::{NullString, binrw};
 use bitflags::bitflags;
 #[binrw]
@@ -178,7 +179,11 @@ pub enum PacketData {
     packet: Vec<u8>,
   },
   #[br(pre_assert(ty == PacketType::Key))]
-  Key { key: u64 },
+  Key {
+    #[br(map(|bits: u64| bits.into()))]
+    #[bw(map(|code| u64::from(*code)))]
+    key: Keycode
+  },
   #[br(pre_assert(ty == PacketType::Write))]
   WriteRequest {
     #[br(map(|bits: u32| WriteFlags::from_bits_truncate(bits)))]
