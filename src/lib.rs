@@ -441,7 +441,7 @@ impl ServerPacketData {
       ServerPacketData::Exception { packet } => packet.len(),
       ServerPacketData::Key { key: _ } => 8,
       ServerPacketData::Version { version: _ } => 4,
-      ServerPacketData::Auth { auth_types } => auth_types.len() / 4,
+      ServerPacketData::Auth { auth_types } => auth_types.len() * 4,
       ServerPacketData::GetDriverName { driver } => driver.len(),
       ServerPacketData::GetModelId { model } => model.len(),
       ServerPacketData::GetDisplaySize {
