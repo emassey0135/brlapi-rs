@@ -433,7 +433,7 @@ pub struct Packet {
   #[br(temp)]
   #[bw(calc(data.size() as u32))]
   size: u32,
-  ty: PacketType,
+  pub ty: PacketType,
   #[br(args(size, ty))]
-  data: PacketData,
+  pub data: PacketData,
 }
