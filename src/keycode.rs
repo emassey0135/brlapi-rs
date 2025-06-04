@@ -371,6 +371,16 @@ pub enum BrailleCommand {
   DecreaseSpeechPitch,
   #[brw(magic(151u32))]
   IncreaseSpeechPitch,
+  #[brw(magic(152u32))]
+  SayAll,
+  #[brw(magic(153u32))]
+  ToggleContracted,
+  #[brw(magic(154u32))]
+  Toggle6DotComputerBraille,
+  #[brw(magic(155u32))]
+  ResetPreferences,
+  #[brw(magic(156u32))]
+  ToggleAutoSpeakEmptyLines,
 }
 impl BrailleCommand {
   pub fn from_u32(value: u32) -> Self {
