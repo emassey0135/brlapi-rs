@@ -381,6 +381,52 @@ pub enum BrailleCommand {
   ResetPreferences,
   #[brw(magic(156u32))]
   ToggleAutoSpeakEmptyLines,
+  #[brw(magic(1u16))]
+  RouteCursorToCharacter { column: u16 },
+  #[brw(magic(2u16))]
+  NewClipboardAtCharacter { column: u16 },
+  #[brw(magic(3u16))]
+  AppendToCharacter { column: u16 },
+  #[brw(magic(4u16))]
+  RectangularCopyToCharacter { column: u16 },
+  #[brw(magic(5u16))]
+  LinearCopyToCharacter { column: u16 },
+  #[brw(magic(6u16))]
+  SwitchToVirtualTerminal { terminal: u16 },
+  #[brw(magic(7u16))]
+  PreviousIndent { column: u16 },
+  #[brw(magic(8u16))]
+  NextIndent { column: u16 },
+  #[brw(magic(9u16))]
+  DescribeCharacter { column: u16 },
+  #[brw(magic(10u16))]
+  SetWindowLeft { column: u16 },
+  #[brw(magic(11u16))]
+  SetMark { marker_number: u16 },
+  #[brw(magic(12u16))]
+  GoToMark { marker_number: u16 },
+  #[brw(magic(13u16))]
+  GoToLine { row: u16 },
+  #[brw(magic(14u16))]
+  PreviousLineWithDifferentCharacter { column: u16 },
+  #[brw(magic(15u16))]
+  NextLineWithDifferentCharacter { column: u16 },
+  #[brw(magic(16u16))]
+  Copy { start_column: u8, end_column: u8 },
+  #[brw(magic(17u16))]
+  Append { start_column: u8, end_column: u8 },
+  #[brw(magic(18u16))]
+  PasteFromHistory { history_entry: u16 },
+  #[brw(magic(19u16))]
+  SetTextTable { index: u16 },
+  #[brw(magic(20u16))]
+  SetAttributesTable { index: u16 },
+  #[brw(magic(21u16))]
+  SetContractionTable { index: u16 },
+  #[brw(magic(22u16))]
+  SetKeyboardTable { index: u16 },
+  #[brw(magic(23u16))]
+  SetLanguageProfile { index: u16 },
 }
 impl BrailleCommand {
   pub fn from_u32(value: u32) -> Self {
