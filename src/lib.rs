@@ -215,9 +215,11 @@ pub enum ClientPacketData {
   #[br(pre_assert(ty == PacketType::Version))]
   Version { version: u32 },
   #[br(pre_assert(ty == PacketType::Auth))]
+  #[br(assert(auth_type == AuthType::Key))]
+  #[bw(assert(*auth_type == AuthType::Key))]
   Auth {
-    #[br(count(size/4))]
-    auth_types: Vec<AuthType>,
+    auth_type: AuthType,
+    key: NullString,
   },
   #[br(pre_assert(ty == PacketType::GetDriverName))]
   GetDriverName,
@@ -299,7 +301,7 @@ impl ClientPacketData {
   fn size(&self) -> usize {
     match self {
       ClientPacketData::Version { version: _ } => 4,
-      ClientPacketData::Auth { auth_types } => auth_types.len() / 4,
+      ClientPacketData::Auth { auth_type: _, key } => key.len() + 4,
       ClientPacketData::GetDriverName => 0,
       ClientPacketData::GetModelId => 0,
       ClientPacketData::GetDisplaySize => 0,
@@ -396,11 +398,9 @@ pub enum ServerPacketData {
   #[br(pre_assert(ty == PacketType::Version))]
   Version { version: u32 },
   #[br(pre_assert(ty == PacketType::Auth))]
-  #[br(assert(auth_type == AuthType::Key))]
-  #[bw(assert(*auth_type == AuthType::Key))]
   Auth {
-    auth_type: AuthType,
-    key: NullString,
+    #[br(count(size/4))]
+    auth_types: Vec<AuthType>,
   },
   #[br(pre_assert(ty == PacketType::GetDriverName))]
   GetDriverName { driver: NullString },
@@ -441,7 +441,7 @@ impl ServerPacketData {
       ServerPacketData::Exception { packet } => packet.len(),
       ServerPacketData::Key { key: _ } => 8,
       ServerPacketData::Version { version: _ } => 4,
-      ServerPacketData::Auth { auth_type: _, key } => key.len() + 4,
+      ServerPacketData::Auth { auth_types } => auth_types.len() / 4,
       ServerPacketData::GetDriverName { driver } => driver.len(),
       ServerPacketData::GetModelId { model } => model.len(),
       ServerPacketData::GetDisplaySize {
