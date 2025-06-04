@@ -163,29 +163,9 @@ fn calculate_write_flags(
 #[br(assert(size as usize == self.size()))]
 #[derive(Debug, PartialEq, Eq, Clone)]
 #[allow(clippy::cast_possible_truncation)]
-pub enum PacketData {
-  #[br(pre_assert(ty == PacketType::Ack))]
-  AckResponse,
-  #[br(pre_assert(ty == PacketType::Error))]
-  ErrorResponse {
-    code: ErrorCode,
-    packet_type: PacketType,
-    #[br(count(size-8))]
-    packet_data: Vec<u8>,
-  },
-  #[br(pre_assert(ty == PacketType::Exception))]
-  ExceptionResponse {
-    #[br(count(size))]
-    packet: Vec<u8>,
-  },
-  #[br(pre_assert(ty == PacketType::Key))]
-  Key {
-    #[br(map(|bits: u64| bits.into()))]
-    #[bw(map(|code| u64::from(*code)))]
-    key: Keycode
-  },
+pub enum ClientPacketData {
   #[br(pre_assert(ty == PacketType::Write))]
-  WriteRequest {
+  Write {
     #[br(map(|bits: u32| WriteFlags::from_bits_truncate(bits)))]
     #[bw(map(|flags| flags.bits()))]
     #[br(temp)]
@@ -235,31 +215,18 @@ pub enum PacketData {
   #[br(pre_assert(ty == PacketType::Version))]
   Version { version: u32 },
   #[br(pre_assert(ty == PacketType::Auth))]
-  AuthRequest {
+  Auth {
     #[br(count(size/4))]
     auth_types: Vec<AuthType>,
   },
-  #[br(pre_assert(ty == PacketType::Auth))]
-  #[br(assert(auth_type == AuthType::Key))]
-  #[bw(assert(*auth_type == AuthType::Key))]
-  AuthResponse {
-    auth_type: AuthType,
-    key: NullString,
-  },
   #[br(pre_assert(ty == PacketType::GetDriverName))]
-  GetDriverNameRequest,
-  #[br(pre_assert(ty == PacketType::GetDriverName))]
-  GetDriverNameResponse { driver: NullString },
+  GetDriverName,
   #[br(pre_assert(ty == PacketType::GetModelId))]
-  GetModelIdRequest,
-  #[br(pre_assert(ty == PacketType::GetModelId))]
-  GetModelIdResponse { model: NullString },
+  GetModelId,
   #[br(pre_assert(ty == PacketType::GetDisplaySize))]
-  GetDisplaySizeRequest,
-  #[br(pre_assert(ty == PacketType::GetDisplaySize))]
-  GetDisplaySizeResponse { width: u32, height: u32 },
+  GetDisplaySize,
   #[br(pre_assert(ty == PacketType::EnterTtyMode))]
-  EnterTtyModeRequest {
+  EnterTtyMode {
     #[br(temp)]
     #[bw(calc(ttys.len() as u32))]
     ttys_len: u32,
@@ -272,22 +239,22 @@ pub enum PacketData {
     driver: Vec<u8>,
   },
   #[br(pre_assert(ty == PacketType::SetFocus))]
-  SetFocusRequest { tty: u32 },
+  SetFocus { tty: u32 },
   #[br(pre_assert(ty == PacketType::LeaveTtyMode))]
-  LeaveTtyModeRequest,
+  LeaveTtyMode,
   #[br(pre_assert(ty == PacketType::IgnoreKeyRanges))]
-  IgnoreKeyRangesRequest {
+  IgnoreKeyRanges {
     #[br(count(size/16))]
     ranges: Vec<(u64, u64)>,
   },
   #[br(pre_assert(ty == PacketType::AcceptKeyRanges))]
-  AcceptKeyRangesRequest {
+  AcceptKeyRanges {
     #[br(count(size/16))]
     ranges: Vec<(u64, u64)>,
   },
   #[br(pre_assert(ty == PacketType::EnterRawMode))]
   #[brw(magic(0xdead_beefu64))]
-  EnterRawModeRequest {
+  EnterRawMode {
     #[br(temp)]
     #[bw(calc(driver.len() as u8))]
     driver_len: u8,
@@ -295,10 +262,10 @@ pub enum PacketData {
     driver: Vec<u8>,
   },
   #[br(pre_assert(ty == PacketType::LeaveRawMode))]
-  LeaveRawModeRequest,
+  LeaveRawMode,
   #[br(pre_assert(ty == PacketType::SuspendDriver))]
   #[brw(magic(0xdead_beefu64))]
-  SuspendDriverRequest {
+  SuspendDriver {
     #[br(temp)]
     #[bw(calc(driver.len() as u8))]
     driver_len: u8,
@@ -306,9 +273,9 @@ pub enum PacketData {
     driver: Vec<u8>,
   },
   #[br(pre_assert(ty == PacketType::ResumeDriver))]
-  ResumeDriverRequest,
+  ResumeDriver,
   #[br(pre_assert(ty == PacketType::Synchronize))]
-  SynchronizeRequest,
+  Synchronize,
   #[br(pre_assert(ty == PacketType::ParameterRequest))]
   ParameterRequest {
     #[br(map(|bits: u32| ParameterRequestFlags::from_bits_truncate(bits)))]
@@ -327,46 +294,21 @@ pub enum PacketData {
     #[br(count(size-16))]
     value: Vec<u8>,
   },
-  #[br(pre_assert(ty == PacketType::ParameterUpdate))]
-  ParameterUpdate {
-    #[br(map(|bits: u32| ParameterValueFlags::from_bits_truncate(bits)))]
-    #[bw(map(ParameterValueFlags::bits))]
-    flags: ParameterValueFlags,
-    parameter: u32,
-    sub_parameter: u64,
-    #[br(count(size-16))]
-    value: Vec<u8>,
-  },
 }
-impl PacketData {
+impl ClientPacketData {
   fn size(&self) -> usize {
     match self {
-      PacketData::AckResponse => 0,
-      PacketData::ErrorResponse {
-        code: _,
-        packet_type: _,
-        packet_data,
-      } => 8 + packet_data.len(),
-      PacketData::ExceptionResponse { packet } => packet.len(),
-      PacketData::Key { key: _ } => 8,
-      PacketData::Version { version: _ } => 4,
-      PacketData::AuthRequest { auth_types } => auth_types.len() / 4,
-      PacketData::AuthResponse { auth_type: _, key } => key.len() + 4,
-      PacketData::GetDriverNameRequest => 0,
-      PacketData::GetDriverNameResponse { driver } => driver.len(),
-      PacketData::GetModelIdRequest => 0,
-      PacketData::GetModelIdResponse { model } => model.len(),
-      PacketData::GetDisplaySizeRequest => 0,
-      PacketData::GetDisplaySizeResponse {
-        width: _,
-        height: _,
-      } => 8,
-      PacketData::EnterTtyModeRequest { ttys, driver } => 8 + ttys.len() + driver.len(),
-      PacketData::SetFocusRequest { tty: _ } => 4,
-      PacketData::LeaveTtyModeRequest => 0,
-      PacketData::IgnoreKeyRangesRequest { ranges } => ranges.len() * 16,
-      PacketData::AcceptKeyRangesRequest { ranges } => ranges.len() * 16,
-      PacketData::WriteRequest {
+      ClientPacketData::Version { version: _ } => 4,
+      ClientPacketData::Auth { auth_types } => auth_types.len() / 4,
+      ClientPacketData::GetDriverName => 0,
+      ClientPacketData::GetModelId => 0,
+      ClientPacketData::GetDisplaySize => 0,
+      ClientPacketData::EnterTtyMode { ttys, driver } => 8 + ttys.len() + driver.len(),
+      ClientPacketData::SetFocus { tty: _ } => 4,
+      ClientPacketData::LeaveTtyMode => 0,
+      ClientPacketData::IgnoreKeyRanges { ranges } => ranges.len() * 16,
+      ClientPacketData::AcceptKeyRanges { ranges } => ranges.len() * 16,
+      ClientPacketData::Write {
         display_number,
         region,
         text,
@@ -399,24 +341,121 @@ impl PacketData {
         }
         size
       }
-      PacketData::EnterRawModeRequest { driver } => 8 + driver.len(),
-      PacketData::LeaveRawModeRequest => 0,
-      PacketData::Packet { packet } => packet.len(),
-      PacketData::SuspendDriverRequest { driver } => 8 + driver.len(),
-      PacketData::ResumeDriverRequest => 0,
-      PacketData::SynchronizeRequest => 0,
-      PacketData::ParameterRequest {
+      ClientPacketData::EnterRawMode { driver } => 8 + driver.len(),
+      ClientPacketData::LeaveRawMode => 0,
+      ClientPacketData::Packet { packet } => packet.len(),
+      ClientPacketData::SuspendDriver { driver } => 8 + driver.len(),
+      ClientPacketData::ResumeDriver => 0,
+      ClientPacketData::Synchronize => 0,
+      ClientPacketData::ParameterRequest {
         flags: _,
         parameter: _,
         sub_parameter: _,
       } => 16,
-      PacketData::ParameterValue {
+      ClientPacketData::ParameterValue {
         flags: _,
         parameter: _,
         sub_parameter: _,
         value,
       } => 16 + value.len(),
-      PacketData::ParameterUpdate {
+    }
+  }
+}
+#[binrw]
+#[brw(big)]
+#[br(import(size: u32, ty: PacketType))]
+#[br(assert(size as usize == self.size()))]
+#[derive(Debug, PartialEq, Eq, Clone)]
+#[allow(clippy::cast_possible_truncation)]
+pub enum ServerPacketData {
+  #[br(pre_assert(ty == PacketType::Ack))]
+  Ack,
+  #[br(pre_assert(ty == PacketType::Error))]
+  Error {
+    code: ErrorCode,
+    packet_type: PacketType,
+    #[br(count(size-8))]
+    packet_data: Vec<u8>,
+  },
+  #[br(pre_assert(ty == PacketType::Exception))]
+  Exception {
+    #[br(count(size))]
+    packet: Vec<u8>,
+  },
+  #[br(pre_assert(ty == PacketType::Key))]
+  Key {
+    #[br(map(|bits: u64| bits.into()))]
+    #[bw(map(|code| u64::from(*code)))]
+    key: Keycode,
+  },
+  #[br(pre_assert(ty == PacketType::Packet))]
+  Packet {
+    #[br(count(size))]
+    packet: Vec<u8>,
+  },
+  #[br(pre_assert(ty == PacketType::Version))]
+  Version { version: u32 },
+  #[br(pre_assert(ty == PacketType::Auth))]
+  #[br(assert(auth_type == AuthType::Key))]
+  #[bw(assert(*auth_type == AuthType::Key))]
+  Auth {
+    auth_type: AuthType,
+    key: NullString,
+  },
+  #[br(pre_assert(ty == PacketType::GetDriverName))]
+  GetDriverName { driver: NullString },
+  #[br(pre_assert(ty == PacketType::GetModelId))]
+  GetModelId { model: NullString },
+  #[br(pre_assert(ty == PacketType::GetDisplaySize))]
+  GetDisplaySize { width: u32, height: u32 },
+  #[br(pre_assert(ty == PacketType::ParameterValue))]
+  ParameterValue {
+    #[br(map(|bits: u32| ParameterValueFlags::from_bits_truncate(bits)))]
+    #[bw(map(ParameterValueFlags::bits))]
+    flags: ParameterValueFlags,
+    parameter: u32,
+    sub_parameter: u64,
+    #[br(count(size-16))]
+    value: Vec<u8>,
+  },
+  #[br(pre_assert(ty == PacketType::ParameterUpdate))]
+  ParameterUpdate {
+    #[br(map(|bits: u32| ParameterValueFlags::from_bits_truncate(bits)))]
+    #[bw(map(ParameterValueFlags::bits))]
+    flags: ParameterValueFlags,
+    parameter: u32,
+    sub_parameter: u64,
+    #[br(count(size-16))]
+    value: Vec<u8>,
+  },
+}
+impl ServerPacketData {
+  fn size(&self) -> usize {
+    match self {
+      ServerPacketData::Ack => 0,
+      ServerPacketData::Error {
+        code: _,
+        packet_type: _,
+        packet_data,
+      } => 8 + packet_data.len(),
+      ServerPacketData::Exception { packet } => packet.len(),
+      ServerPacketData::Key { key: _ } => 8,
+      ServerPacketData::Version { version: _ } => 4,
+      ServerPacketData::Auth { auth_type: _, key } => key.len() + 4,
+      ServerPacketData::GetDriverName { driver } => driver.len(),
+      ServerPacketData::GetModelId { model } => model.len(),
+      ServerPacketData::GetDisplaySize {
+        width: _,
+        height: _,
+      } => 8,
+      ServerPacketData::Packet { packet } => packet.len(),
+      ServerPacketData::ParameterValue {
+        flags: _,
+        parameter: _,
+        sub_parameter: _,
+        value,
+      } => 16 + value.len(),
+      ServerPacketData::ParameterUpdate {
         flags: _,
         parameter: _,
         sub_parameter: _,
@@ -429,11 +468,23 @@ impl PacketData {
 #[brw(big)]
 #[br(assert(size as usize == data.size()))]
 #[derive(Debug, PartialEq, Eq, Clone)]
-pub struct Packet {
+pub struct ClientPacket {
   #[br(temp)]
   #[bw(calc(data.size() as u32))]
   size: u32,
   pub ty: PacketType,
   #[br(args(size, ty))]
-  pub data: PacketData,
+  pub data: ClientPacketData,
+}
+#[binrw]
+#[brw(big)]
+#[br(assert(size as usize == data.size()))]
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub struct ServerPacket {
+  #[br(temp)]
+  #[bw(calc(data.size() as u32))]
+  size: u32,
+  pub ty: PacketType,
+  #[br(args(size, ty))]
+  pub data: ServerPacketData,
 }
