@@ -373,16 +373,12 @@ pub enum ServerPacketData {
   #[br(pre_assert(ty == PacketType::Ack))]
   Ack,
   #[br(pre_assert(ty == PacketType::Error))]
-  Error {
-    code: ErrorCode,
-    packet_type: PacketType,
-    #[br(count(size-8))]
-    packet_data: Vec<u8>,
-  },
+  Error { code: ErrorCode },
   #[br(pre_assert(ty == PacketType::Exception))]
   Exception {
-    #[br(count(size))]
-    packet: Vec<u8>,
+    packet_type: PacketType,
+    #[br(count(size-4))]
+    packet_data: Vec<u8>,
   },
   #[br(pre_assert(ty == PacketType::Key))]
   Key {
@@ -433,12 +429,11 @@ impl ServerPacketData {
   fn size(&self) -> usize {
     match self {
       ServerPacketData::Ack => 0,
-      ServerPacketData::Error {
-        code: _,
+      ServerPacketData::Error { code: _ } => 4,
+      ServerPacketData::Exception {
         packet_type: _,
         packet_data,
-      } => 8 + packet_data.len(),
-      ServerPacketData::Exception { packet } => packet.len(),
+      } => 4 + packet_data.len(),
       ServerPacketData::Key { key: _ } => 8,
       ServerPacketData::Version { version: _ } => 4,
       ServerPacketData::Auth { auth_types } => auth_types.len() * 4,
