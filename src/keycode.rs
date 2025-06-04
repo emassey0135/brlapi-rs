@@ -319,6 +319,58 @@ pub enum BrailleCommand {
   ToggleTouchNavigation,
   #[brw(magic(125u32))]
   SpeakIndent,
+  #[brw(magic(126u32))]
+  ToggleAutoSpeakIndent,
+  #[brw(magic(127u32))]
+  Refresh,
+  #[brw(magic(128u32))]
+  ShowStatusIndicators,
+  #[brw(magic(129u32))]
+  ClearTextSelection,
+  #[brw(magic(130u32))]
+  SelectAll,
+  #[brw(magic(131u32))]
+  HostCopy,
+  #[brw(magic(132u32))]
+  HostCut,
+  #[brw(magic(133u32))]
+  HostPaste,
+  #[brw(magic(134u32))]
+  GuiTitle,
+  #[brw(magic(135u32))]
+  GuiBrailleActions,
+  #[brw(magic(136u32))]
+  GuiHome,
+  #[brw(magic(137u32))]
+  GuiBack,
+  #[brw(magic(138u32))]
+  GuiDeviceSettings,
+  #[brw(magic(139u32))]
+  GuiDeviceOptions,
+  #[brw(magic(140u32))]
+  GuiApplicationsList,
+  #[brw(magic(141u32))]
+  GuiApplicationMenu,
+  #[brw(magic(142u32))]
+  GuiApplicationAlerts,
+  #[brw(magic(143u32))]
+  GuiActiveArea,
+  #[brw(magic(144u32))]
+  GuiPreviousArea,
+  #[brw(magic(145u32))]
+  GuiNextArea,
+  #[brw(magic(146u32))]
+  GuiFirstItem,
+  #[brw(magic(147u32))]
+  GuiPreviousItem,
+  #[brw(magic(148u32))]
+  GuiNextItem,
+  #[brw(magic(149u32))]
+  GuiLastItem,
+  #[brw(magic(150u32))]
+  DecreaseSpeechPitch,
+  #[brw(magic(151u32))]
+  IncreaseSpeechPitch,
 }
 impl BrailleCommand {
   pub fn from_u32(value: u32) -> Self {
