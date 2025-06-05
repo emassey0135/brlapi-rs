@@ -219,7 +219,8 @@ pub enum ClientPacketData {
   #[bw(assert(*auth_type == AuthType::Key))]
   Auth {
     auth_type: AuthType,
-    key: NullString,
+    #[br(count(size-4))]
+    key: Vec<u8>,
   },
   #[br(pre_assert(ty == PacketType::GetDriverName))]
   GetDriverName,
@@ -235,8 +236,8 @@ pub enum ClientPacketData {
     #[br(count(ttys_len))]
     ttys: Vec<u32>,
     #[br(temp)]
-    #[bw(calc(driver.len() as u32))]
-    driver_len: u32,
+    #[bw(calc(driver.len() as u8))]
+    driver_len: u8,
     #[br(count(driver_len))]
     driver: Vec<u8>,
   },
@@ -305,7 +306,7 @@ impl ClientPacketData {
       ClientPacketData::GetDriverName => 0,
       ClientPacketData::GetModelId => 0,
       ClientPacketData::GetDisplaySize => 0,
-      ClientPacketData::EnterTtyMode { ttys, driver } => 8 + ttys.len() + driver.len(),
+      ClientPacketData::EnterTtyMode { ttys, driver } => 5 + ttys.len()*4 + driver.len(),
       ClientPacketData::SetFocus { tty: _ } => 4,
       ClientPacketData::LeaveTtyMode => 0,
       ClientPacketData::IgnoreKeyRanges { ranges } => ranges.len() * 16,
@@ -376,7 +377,7 @@ pub enum ServerPacketData {
   Error { code: ErrorCode },
   #[br(pre_assert(ty == PacketType::Exception))]
   Exception {
-    packet_type: PacketType,
+    packet_type: u32,
     #[br(count(size-4))]
     packet_data: Vec<u8>,
   },
