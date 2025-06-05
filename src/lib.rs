@@ -379,9 +379,9 @@ pub enum ServerPacketData {
   Error { code: ErrorCode },
   #[br(pre_assert(ty == PacketType::Exception))]
   Exception {
-    packet_type: u32,
+    code: ErrorCode,
     #[br(count(size-4))]
-    packet_data: Vec<u8>,
+    packet: Vec<u8>,
   },
   #[br(pre_assert(ty == PacketType::Key))]
   Key {
@@ -433,10 +433,7 @@ impl ServerPacketData {
     match self {
       ServerPacketData::Ack => 0,
       ServerPacketData::Error { code: _ } => 4,
-      ServerPacketData::Exception {
-        packet_type: _,
-        packet_data,
-      } => 4 + packet_data.len(),
+      ServerPacketData::Exception { code: _, packet } => 4 + packet.len(),
       ServerPacketData::Key { key: _ } => 8,
       ServerPacketData::Version { version: _ } => 4,
       ServerPacketData::Auth { auth_types } => auth_types.len() * 4,
