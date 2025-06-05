@@ -200,8 +200,8 @@ pub enum ClientPacketData {
     #[br(if(flags.contains(WriteFlags::Charset)))]
     #[bw(if(WriteFlags::from_bits_truncate(flags).contains(WriteFlags::Charset)))]
     #[br(temp)]
-    #[bw(calc(charset.as_ref().unwrap().len() as u32))]
-    charset_len: u32,
+    #[bw(calc(charset.as_ref().unwrap().len() as u8))]
+    charset_len: u8,
     #[br(if(flags.contains(WriteFlags::Charset)))]
     #[bw(if(WriteFlags::from_bits_truncate(flags).contains(WriteFlags::Charset)))]
     #[br(count(charset_len))]
@@ -328,6 +328,7 @@ impl ClientPacketData {
           size += 8;
         }
         if let Some(text) = text {
+          size += 4;
           size += text.len();
         }
         if let Some(and) = and {
@@ -340,6 +341,7 @@ impl ClientPacketData {
           size += 4;
         }
         if let Some(charset) = charset {
+          size += 1;
           size += charset.len();
         }
         size
