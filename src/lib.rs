@@ -306,7 +306,7 @@ impl ClientPacketData {
       ClientPacketData::GetDriverName => 0,
       ClientPacketData::GetModelId => 0,
       ClientPacketData::GetDisplaySize => 0,
-      ClientPacketData::EnterTtyMode { ttys, driver } => 5 + ttys.len()*4 + driver.len(),
+      ClientPacketData::EnterTtyMode { ttys, driver } => 5 + ttys.len() * 4 + driver.len(),
       ClientPacketData::SetFocus { tty: _ } => 4,
       ClientPacketData::LeaveTtyMode => 0,
       ClientPacketData::IgnoreKeyRanges { ranges } => ranges.len() * 16,
@@ -383,8 +383,8 @@ pub enum ServerPacketData {
   },
   #[br(pre_assert(ty == PacketType::Key))]
   Key {
-    #[br(map(|bits: u64| bits.into()))]
-    #[bw(map(|code| u64::from(*code)))]
+    #[br(map(|bits: u64| Keycode::from_u64(bits)))]
+    #[bw(map(|code| code.to_owned().into_u64()))]
     key: Keycode,
   },
   #[br(pre_assert(ty == PacketType::Packet))]

@@ -2,6 +2,7 @@ use binrw::{BinRead, BinWrite, binrw};
 use bitfield_struct::bitfield;
 use bitflags::bitflags;
 use std::io::Cursor;
+use xkeysym::Keysym;
 bitflags! {
   #[derive(Debug, PartialEq, Eq, Clone)]
   pub struct KeycodeFlags: u32 {
@@ -55,7 +56,7 @@ impl KeycodeType {
 }
 #[bitfield(u64)]
 #[derive(PartialEq, Eq)]
-pub struct Keycode {
+pub struct RawKeycode {
   #[bits(29)]
   code: u32,
   #[bits(3, from = KeycodeType::from_u8, into = KeycodeType::into_u8)]
@@ -469,5 +470,50 @@ impl BrailleCommand {
     self.write(&mut stream).unwrap();
     let bytes = stream.into_inner();
     u32::from_be_bytes(bytes.try_into().unwrap())
+  }
+}
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub struct Keycode {
+  flags: KeycodeFlags,
+  keysym: Option<Keysym>,
+  braille_command: Option<BrailleCommand>,
+}
+impl From<RawKeycode> for Keycode {
+  fn from(keycode: RawKeycode) -> Self {
+    match keycode.type_flags() {
+      KeycodeType::Keysym => Keycode {
+        flags: keycode.flags(),
+        braille_command: None,
+        keysym: Some(Keysym::new(keycode.code())),
+      },
+      KeycodeType::BrailleCommand => Keycode {
+        flags: keycode.flags(),
+        braille_command: Some(BrailleCommand::from_u32(keycode.code())),
+        keysym: None,
+      },
+    }
+  }
+}
+impl From<Keycode> for RawKeycode {
+  fn from(keycode: Keycode) -> Self {
+    match (keycode.keysym, keycode.braille_command) {
+      (Some(keysym), _) => RawKeycode::new()
+        .with_flags(keycode.flags)
+        .with_type_flags(KeycodeType::Keysym)
+        .with_code(keysym.raw()),
+      (None, Some(command)) => RawKeycode::new()
+        .with_flags(keycode.flags)
+        .with_type_flags(KeycodeType::BrailleCommand)
+        .with_code(command.into_u32()),
+      (None, None) => panic!("Invalid Keycode"),
+    }
+  }
+}
+impl Keycode {
+  pub fn from_u64(keycode: u64) -> Self {
+    RawKeycode::from(keycode).into()
+  }
+  pub fn into_u64(self) -> u64 {
+    RawKeycode::from(self).into()
   }
 }
