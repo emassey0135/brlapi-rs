@@ -248,15 +248,19 @@ pub enum ClientPacketData {
   #[br(pre_assert(ty == PacketType::IgnoreKeyRanges))]
   IgnoreKeyRanges {
     #[br(count(size/16))]
-    ranges: Vec<(u64, u64)>,
+    #[br(map(|ranges: Vec<(u64, u64)>| ranges.into_iter().map(|range| (Keycode::from_u64(range.0), Keycode::from_u64(range.1))).collect()))]
+    #[bw(map(|ranges| ranges.into_iter().map(|range| (range.0.to_owned().into_u64(), range.1.to_owned().into_u64())).collect::<Vec<(u64, u64)>>()))]
+    ranges: Vec<(Keycode, Keycode)>,
   },
   #[br(pre_assert(ty == PacketType::AcceptKeyRanges))]
   AcceptKeyRanges {
     #[br(count(size/16))]
-    ranges: Vec<(u64, u64)>,
+    #[br(map(|ranges: Vec<(u64, u64)>| ranges.into_iter().map(|range| (Keycode::from_u64(range.0), Keycode::from_u64(range.1))).collect()))]
+    #[bw(map(|ranges| ranges.into_iter().map(|range| (range.0.to_owned().into_u64(), range.1.to_owned().into_u64())).collect::<Vec<(u64, u64)>>()))]
+    ranges: Vec<(Keycode, Keycode)>,
   },
   #[br(pre_assert(ty == PacketType::EnterRawMode))]
-  #[brw(magic(0xdead_beefu64))]
+  #[brw(magic(0xdead_beefu32))]
   EnterRawMode {
     #[br(temp)]
     #[bw(calc(driver.len() as u8))]
@@ -267,7 +271,7 @@ pub enum ClientPacketData {
   #[br(pre_assert(ty == PacketType::LeaveRawMode))]
   LeaveRawMode,
   #[br(pre_assert(ty == PacketType::SuspendDriver))]
-  #[brw(magic(0xdead_beefu64))]
+  #[brw(magic(0xdead_beefu32))]
   SuspendDriver {
     #[br(temp)]
     #[bw(calc(driver.len() as u8))]
@@ -346,10 +350,10 @@ impl ClientPacketData {
         }
         size
       }
-      ClientPacketData::EnterRawMode { driver } => 8 + driver.len(),
+      ClientPacketData::EnterRawMode { driver } => 5 + driver.len(),
       ClientPacketData::LeaveRawMode => 0,
       ClientPacketData::Packet { packet } => packet.len(),
-      ClientPacketData::SuspendDriver { driver } => 8 + driver.len(),
+      ClientPacketData::SuspendDriver { driver } => 5 + driver.len(),
       ClientPacketData::ResumeDriver => 0,
       ClientPacketData::Synchronize => 0,
       ClientPacketData::ParameterRequest {
