@@ -437,8 +437,8 @@ impl ServerPacketData {
       ServerPacketData::Key { key: _ } => 8,
       ServerPacketData::Version { version: _ } => 4,
       ServerPacketData::Auth { auth_types } => auth_types.len() * 4,
-      ServerPacketData::GetDriverName { driver } => driver.len(),
-      ServerPacketData::GetModelId { model } => model.len(),
+      ServerPacketData::GetDriverName { driver } => driver.len() + 1,
+      ServerPacketData::GetModelId { model } => model.len() + 1,
       ServerPacketData::GetDisplaySize {
         width: _,
         height: _,
