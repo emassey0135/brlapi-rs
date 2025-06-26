@@ -1,0 +1,9 @@
+[package]
+name = "brlapi-server"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+binrw = "0.15.0"
+brlapi-types = { version = "0.1.0", path = "../brlapi-types" }
+tokio = { version = "1.45.1", features = ["full"] }
