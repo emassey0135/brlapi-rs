@@ -1,5 +1,5 @@
 use binrw::{BinRead, BinWrite};
-use brlapi_types::{AuthType, ClientPacket, ClientPacketData, ErrorCode, PacketType, ServerPacket, ServerPacketData};
+use brlapi_types::{AuthType, ClientPacket, ClientPacketData, ErrorCode, ServerPacket, ServerPacketData};
 use std::io::Cursor;
 use std::net::{Ipv4Addr, SocketAddrV4};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
@@ -25,12 +25,12 @@ async fn write_packet<T: AsyncWrite + Unpin>(packet: ServerPacket, writer: &mut 
   writer.flush().await.unwrap();
 }
 async fn handle_connection(mut socket: TcpStream, auth_key: Option<String>) {
-  write_packet(ServerPacket { ty: PacketType::Version, data: ServerPacketData::Version { version: 8 }}, &mut socket).await;
+  write_packet(ServerPacket { data: ServerPacketData::Version { version: 8 }}, &mut socket).await;
   let version_packet = read_packet(&mut socket).await;
-  match version_packet {
-    ClientPacket { ty: PacketType::Version, data: ClientPacketData::Version { version: 8 }} => {},
+  match version_packet.data {
+    ClientPacketData::Version { version: 8 } => {},
     _ => {
-      write_packet(ServerPacket { ty: PacketType::Error, data: ServerPacketData::Error { code: ErrorCode::BadProtocolVersion }}, &mut socket).await;
+      write_packet(ServerPacket { data: ServerPacketData::Error { code: ErrorCode::BadProtocolVersion }}, &mut socket).await;
       return;
     }
   }
@@ -40,23 +40,23 @@ async fn handle_connection(mut socket: TcpStream, auth_key: Option<String>) {
   else {
     AuthType::None
   };
-  write_packet(ServerPacket { ty: PacketType::Auth, data: ServerPacketData::Auth { auth_types: vec![auth_type] }}, &mut socket).await;
+  write_packet(ServerPacket { data: ServerPacketData::Auth { auth_types: vec![auth_type] }}, &mut socket).await;
   if let Some(auth_key) = auth_key {
     loop {
       let auth_packet = read_packet(&mut socket).await;
-      match auth_packet {
-        ClientPacket { ty: PacketType::Auth, data: ClientPacketData::Auth { auth_type: AuthType::Key, key: client_key }} => {
+      match auth_packet.data {
+        ClientPacketData::Auth { auth_type: AuthType::Key, key: client_key } => {
           if String::from_utf8_lossy(&client_key) == auth_key {
-            write_packet(ServerPacket { ty: PacketType::Ack, data: ServerPacketData::Ack }, &mut socket).await;
+            write_packet(ServerPacket { data: ServerPacketData::Ack }, &mut socket).await;
             break;
           }
           else {
-            write_packet(ServerPacket { ty: PacketType::Error, data: ServerPacketData::Error { code: ErrorCode::AuthenticationFailed }}, &mut socket).await;
+            write_packet(ServerPacket { data: ServerPacketData::Error { code: ErrorCode::AuthenticationFailed }}, &mut socket).await;
             continue;
           }
         },
         _ => {
-          write_packet(ServerPacket { ty: PacketType::Error, data: ServerPacketData::Error { code: ErrorCode::BadProtocolVersion }}, &mut socket).await;
+          write_packet(ServerPacket { data: ServerPacketData::Error { code: ErrorCode::BadProtocolVersion }}, &mut socket).await;
           return;
         }
       }

@@ -161,6 +161,7 @@ fn calculate_write_flags(
 #[brw(big)]
 #[br(import(size: u32, ty: PacketType))]
 #[br(assert(size as usize == self.size()))]
+#[br(assert(ty == self.ty()))]
 #[derive(Debug, PartialEq, Eq, Clone)]
 #[allow(clippy::cast_possible_truncation)]
 pub enum ClientPacketData {
@@ -369,11 +370,52 @@ impl ClientPacketData {
       } => 16 + value.len(),
     }
   }
+  fn ty(&self) -> PacketType {
+    match self {
+      ClientPacketData::Version { version: _ } => PacketType::Version,
+      ClientPacketData::Auth { auth_type: _, key: _ } => PacketType::Auth,
+      ClientPacketData::GetDriverName => PacketType::GetDriverName,
+      ClientPacketData::GetModelId => PacketType::GetModelId,
+      ClientPacketData::GetDisplaySize => PacketType::GetDisplaySize,
+      ClientPacketData::EnterTtyMode { ttys: _, driver: _ } => PacketType::EnterTtyMode,
+      ClientPacketData::SetFocus { tty: _ } => PacketType::SetFocus,
+      ClientPacketData::LeaveTtyMode => PacketType::LeaveTtyMode,
+      ClientPacketData::IgnoreKeyRanges { ranges: _ } => PacketType::IgnoreKeyRanges,
+      ClientPacketData::AcceptKeyRanges { ranges: _ } => PacketType::AcceptKeyRanges,
+      ClientPacketData::Write {
+        display_number: _,
+        region: _,
+        text: _,
+        and: _,
+        or: _,
+        cursor: _,
+        charset: _,
+      } => PacketType::Write,
+      ClientPacketData::EnterRawMode { driver: _ } => PacketType::EnterRawMode,
+      ClientPacketData::LeaveRawMode => PacketType::LeaveRawMode,
+      ClientPacketData::Packet { packet: _ } => PacketType::Packet,
+      ClientPacketData::SuspendDriver { driver: _ } => PacketType::SuspendDriver,
+      ClientPacketData::ResumeDriver => PacketType::ResumeDriver,
+      ClientPacketData::Synchronize => PacketType::Synchronize,
+      ClientPacketData::ParameterRequest {
+        flags: _,
+        parameter: _,
+        sub_parameter: _,
+      } => PacketType::ParameterRequest,
+      ClientPacketData::ParameterValue {
+        flags: _,
+        parameter: _,
+        sub_parameter: _,
+        value: _,
+      } => PacketType::ParameterValue,
+    }
+  }
 }
 #[binrw]
 #[brw(big)]
 #[br(import(size: u32, ty: PacketType))]
 #[br(assert(size as usize == self.size()))]
+#[br(assert(ty == self.ty()))]
 #[derive(Debug, PartialEq, Eq, Clone)]
 #[allow(clippy::cast_possible_truncation)]
 pub enum ServerPacketData {
@@ -462,15 +504,47 @@ impl ServerPacketData {
       } => 16 + value.len(),
     }
   }
+  fn ty(&self) -> PacketType {
+    match self {
+      ServerPacketData::Ack => PacketType::Ack,
+      ServerPacketData::Error { code: _ } => PacketType::Error,
+      ServerPacketData::Exception { code: _, packet: _ } => PacketType::Exception,
+      ServerPacketData::Key { key: _ } => PacketType::Key,
+      ServerPacketData::Version { version: _ } => PacketType::Version,
+      ServerPacketData::Auth { auth_types: _ } => PacketType::Auth,
+      ServerPacketData::GetDriverName { driver: _ } => PacketType::GetDriverName,
+      ServerPacketData::GetModelId { model: _ } => PacketType::GetModelId,
+      ServerPacketData::GetDisplaySize {
+        width: _,
+        height: _,
+      } => PacketType::GetDisplaySize,
+      ServerPacketData::Packet { packet: _ } => PacketType::Packet,
+      ServerPacketData::ParameterValue {
+        flags: _,
+        parameter: _,
+        sub_parameter: _,
+        value: _,
+      } => PacketType::ParameterValue,
+      ServerPacketData::ParameterUpdate {
+        flags: _,
+        parameter: _,
+        sub_parameter: _,
+        value: _,
+      } => PacketType::ParameterUpdate,
+    }
+  }
 }
 #[binrw]
 #[brw(big)]
 #[br(assert(size as usize == data.size()))]
+#[br(assert(ty == data.ty()))]
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct ClientPacket {
   #[br(temp)]
   #[bw(calc(data.size() as u32))]
   size: u32,
+  #[br(temp)]
+  #[bw(calc(data.ty()))]
   pub ty: PacketType,
   #[br(args(size, ty))]
   pub data: ClientPacketData,
@@ -478,11 +552,14 @@ pub struct ClientPacket {
 #[binrw]
 #[brw(big)]
 #[br(assert(size as usize == data.size()))]
+#[br(assert(ty == data.ty()))]
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct ServerPacket {
   #[br(temp)]
   #[bw(calc(data.size() as u32))]
   size: u32,
+  #[br(temp)]
+  #[bw(calc(data.ty()))]
   pub ty: PacketType,
   #[br(args(size, ty))]
   pub data: ServerPacketData,
