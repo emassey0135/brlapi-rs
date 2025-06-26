@@ -1,5 +1,5 @@
 use binrw::{BinRead, BinWrite};
-use brlapi_types::{ClientPacket, ClientPacketData, PacketType, ServerPacket, ServerPacketData};
+use brlapi_types::{AuthType, ClientPacket, ClientPacketData, ErrorCode, PacketType, ServerPacket, ServerPacketData};
 use std::io::Cursor;
 use std::net::{Ipv4Addr, SocketAddrV4};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
@@ -26,6 +26,15 @@ async fn write_packet<T: AsyncWrite + Unpin>(packet: ServerPacket, writer: &mut 
 }
 async fn handle_connection(mut socket: TcpStream) {
   write_packet(ServerPacket { ty: PacketType::Version, data: ServerPacketData::Version { version: 8 }}, &mut socket).await;
+  let version_packet = read_packet(&mut socket).await;
+  match version_packet {
+    ClientPacket { ty: PacketType::Version, data: ClientPacketData::Version { version: 8 }} => {},
+    _ => {
+      write_packet(ServerPacket { ty: PacketType::Error, data: ServerPacketData::Error { code: ErrorCode::BadProtocolVersion }}, &mut socket).await;
+      return;
+    }
+  }
+  write_packet(ServerPacket { ty: PacketType::Auth, data: ServerPacketData::Auth { auth_types: vec![AuthType::None] }}, &mut socket).await;
 }
 pub async fn start(port: u16) {
   let listener = TcpListener::bind(SocketAddrV4::new(Ipv4Addr::new(0, 0, 0, 0), port)).await.unwrap();
