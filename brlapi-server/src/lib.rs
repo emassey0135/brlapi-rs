@@ -24,7 +24,7 @@ async fn write_packet<T: AsyncWrite + Unpin>(packet: ServerPacket, writer: &mut 
   writer.write(&data).await.unwrap();
   writer.flush().await.unwrap();
 }
-async fn handle_connection(mut socket: TcpStream) {
+async fn handle_connection(mut socket: TcpStream, auth_key: Option<String>) {
   write_packet(ServerPacket { ty: PacketType::Version, data: ServerPacketData::Version { version: 8 }}, &mut socket).await;
   let version_packet = read_packet(&mut socket).await;
   match version_packet {
@@ -34,14 +34,42 @@ async fn handle_connection(mut socket: TcpStream) {
       return;
     }
   }
-  write_packet(ServerPacket { ty: PacketType::Auth, data: ServerPacketData::Auth { auth_types: vec![AuthType::None] }}, &mut socket).await;
+  let auth_type = if auth_key.is_some() {
+    AuthType::Key
+  }
+  else {
+    AuthType::None
+  };
+  write_packet(ServerPacket { ty: PacketType::Auth, data: ServerPacketData::Auth { auth_types: vec![auth_type] }}, &mut socket).await;
+  if let Some(auth_key) = auth_key {
+    loop {
+      let auth_packet = read_packet(&mut socket).await;
+      match auth_packet {
+        ClientPacket { ty: PacketType::Auth, data: ClientPacketData::Auth { auth_type: AuthType::Key, key: client_key }} => {
+          if String::from_utf8_lossy(&client_key) == auth_key {
+            write_packet(ServerPacket { ty: PacketType::Ack, data: ServerPacketData::Ack }, &mut socket).await;
+            break;
+          }
+          else {
+            write_packet(ServerPacket { ty: PacketType::Error, data: ServerPacketData::Error { code: ErrorCode::AuthenticationFailed }}, &mut socket).await;
+            continue;
+          }
+        },
+        _ => {
+          write_packet(ServerPacket { ty: PacketType::Error, data: ServerPacketData::Error { code: ErrorCode::BadProtocolVersion }}, &mut socket).await;
+          return;
+        }
+      }
+    }
+  }
 }
-pub async fn start(port: u16) {
+pub async fn start(port: u16, auth_key: Option<String>) {
   let listener = TcpListener::bind(SocketAddrV4::new(Ipv4Addr::new(0, 0, 0, 0), port)).await.unwrap();
   loop {
     let (socket, _) = listener.accept().await.unwrap();
+    let auth_key2 = auth_key.clone();
     tokio::spawn(async move {
-      handle_connection(socket).await;
+      handle_connection(socket, auth_key2).await;
     });
   }
 }
