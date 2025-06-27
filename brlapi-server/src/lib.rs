@@ -23,24 +23,25 @@ enum Command {
   GetDimentions { result_tx: oneshot::Sender<(u8, u8)> },
   SetBrailleMatrixSection { start: u16, end: u16, braille: Vec<u8>, result_tx: oneshot::Sender<()> }
 }
-async fn read_packet<T: AsyncRead + Unpin>(reader: &mut T) -> ClientPacket {
+async fn read_packet<T: AsyncRead + Unpin>(reader: &mut T) -> Result<ClientPacket, std::io::Error> {
   let mut buffer: Vec<u8> = vec![0; 4];
-  reader.read_exact(&mut buffer).await.unwrap();
+  reader.read_exact(&mut buffer).await?;
   let size: usize = u32::from_be_bytes(buffer[0..4].try_into().unwrap()) as _;
   buffer.resize(size + 8, 0);
-  reader.read_exact(&mut buffer[4..]).await.unwrap();
+  reader.read_exact(&mut buffer[4..]).await?;
   println!("Packet read: {:?}", &buffer);
   let mut cursor = Cursor::new(buffer);
-  ClientPacket::read(&mut cursor).unwrap()
+  Ok(ClientPacket::read(&mut cursor).unwrap())
 }
-async fn write_packet<T: AsyncWrite + Unpin>(packet: ServerPacket, writer: &mut T) {
+async fn write_packet<T: AsyncWrite + Unpin>(packet: ServerPacket, writer: &mut T) -> Result<(), std::io::Error> {
   let mut cursor = Cursor::new(Vec::new());
   packet.write(&mut cursor).unwrap();
   let data = cursor.into_inner();
   println!("Writing packet: {:?}", packet);
   println!("{:?}", data);
-  writer.write(&data).await.unwrap();
-  writer.flush().await.unwrap();
+  writer.write(&data).await?;
+  writer.flush().await?;
+  Ok(())
 }
 async fn handle_state(columns: u8, lines: u8, braille_tx: mpsc::Sender<Array2<u8>>, mut command_rx: mpsc::Receiver<Command>) {
   let mut state = ServerState { columns, lines, braille_matrix: Array2::zeros((lines as usize, columns as usize)) };
@@ -57,14 +58,14 @@ async fn handle_state(columns: u8, lines: u8, braille_tx: mpsc::Sender<Array2<u8
     }
   }
 }
-async fn handle_connection(mut socket: TcpStream, auth_key: Option<String>, command_tx: mpsc::Sender<Command>) {
-  write_packet(ServerPacket { data: ServerPacketData::Version { version: 8 }}, &mut socket).await;
-  let version_packet = read_packet(&mut socket).await;
+async fn handle_connection(mut socket: TcpStream, auth_key: Option<String>, command_tx: mpsc::Sender<Command>) -> Result<(), std::io::Error> {
+  write_packet(ServerPacket { data: ServerPacketData::Version { version: 8 }}, &mut socket).await?;
+  let version_packet = read_packet(&mut socket).await?;
   match version_packet.data {
     ClientPacketData::Version { version: 8 } => {},
     _ => {
-      write_packet(ServerPacket { data: ServerPacketData::Error { code: ErrorCode::BadProtocolVersion }}, &mut socket).await;
-      return;
+      write_packet(ServerPacket { data: ServerPacketData::Error { code: ErrorCode::BadProtocolVersion }}, &mut socket).await?;
+      return Ok(());
     }
   }
   let auth_type = if auth_key.is_some() {
@@ -73,27 +74,31 @@ async fn handle_connection(mut socket: TcpStream, auth_key: Option<String>, comm
   else {
     AuthType::None
   };
-  write_packet(ServerPacket { data: ServerPacketData::Auth { auth_types: vec![auth_type] }}, &mut socket).await;
+  write_packet(ServerPacket { data: ServerPacketData::Auth { auth_types: vec![auth_type] }}, &mut socket).await?;
   if let Some(auth_key) = auth_key {
     loop {
-      let auth_packet = read_packet(&mut socket).await;
+      let auth_packet = read_packet(&mut socket).await?;
       match auth_packet.data {
         ClientPacketData::Auth { auth_type: AuthType::Key, key: client_key } => {
           if String::from_utf8_lossy(&client_key) == auth_key {
-            write_packet(ServerPacket { data: ServerPacketData::Ack }, &mut socket).await;
+            write_packet(ServerPacket { data: ServerPacketData::Ack }, &mut socket).await?;
             break;
           }
           else {
-            write_packet(ServerPacket { data: ServerPacketData::Error { code: ErrorCode::AuthenticationFailed }}, &mut socket).await;
+            write_packet(ServerPacket { data: ServerPacketData::Error { code: ErrorCode::AuthenticationFailed }}, &mut socket).await?;
             continue;
           }
         },
         _ => {
-          write_packet(ServerPacket { data: ServerPacketData::Error { code: ErrorCode::BadProtocolVersion }}, &mut socket).await;
-          return;
+          write_packet(ServerPacket { data: ServerPacketData::Error { code: ErrorCode::BadProtocolVersion }}, &mut socket).await?;
+          return Ok(());
         }
       }
     }
+  }
+  loop {
+    let packet = read_packet(&mut socket).await?;
+    write_packet(ServerPacket { data: ServerPacketData::Ack }, &mut socket).await?;
   }
 }
 pub async fn start(port: u16, auth_key: Option<String>, backend: ServerBackend) {
@@ -107,7 +112,7 @@ pub async fn start(port: u16, auth_key: Option<String>, backend: ServerBackend) 
     let auth_key2 = auth_key.clone();
     let command_tx2 = command_tx.clone();
     tokio::spawn(async move {
-      handle_connection(socket, auth_key2, command_tx2).await;
+      let _ = handle_connection(socket, auth_key2, command_tx2).await;
     });
   }
 }

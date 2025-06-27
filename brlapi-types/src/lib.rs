@@ -189,11 +189,11 @@ pub enum ClientPacketData {
     text: Option<Vec<u8>>,
     #[br(if(flags.contains(WriteFlags::And)))]
     #[bw(if(WriteFlags::from_bits_truncate(flags).contains(WriteFlags::And)))]
-    #[br(count(region.unwrap().1))]
+    #[br(count(region.unwrap_or((0, 0)).1))]
     and: Option<Vec<u8>>,
     #[br(if(flags.contains(WriteFlags::Or)))]
     #[bw(if(WriteFlags::from_bits_truncate(flags).contains(WriteFlags::Or)))]
-    #[br(count(region.unwrap().1))]
+    #[br(count(region.unwrap_or((0, 0)).1))]
     or: Option<Vec<u8>>,
     #[br(if(flags.contains(WriteFlags::Cursor)))]
     #[bw(if(WriteFlags::from_bits_truncate(flags).contains(WriteFlags::Cursor)))]

@@ -6,5 +6,6 @@ edition = "2024"
 [dependencies]
 binrw = "0.15.0"
 brlapi-types = { version = "0.1.0", path = "../brlapi-types" }
+louis = { git = "https://github.com/emassey0135/liblouis-rust", version = "0.6.2" }
 ndarray = "0.16.1"
 tokio = { version = "1.45.1", features = ["full"] }
