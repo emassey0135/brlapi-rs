@@ -1,10 +1,28 @@
 use binrw::{BinRead, BinWrite};
 use brlapi_types::{AuthType, ClientPacket, ClientPacketData, ErrorCode, ServerPacket, ServerPacketData};
+use brlapi_types::keycode::Keycode;
+use ndarray::{Array1, Array2, s};
 use std::io::Cursor;
 use std::net::{Ipv4Addr, SocketAddrV4};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
+use tokio::sync::{mpsc, oneshot};
 
+pub struct ServerBackend {
+  pub columns: u8,
+  pub lines: u8,
+  pub braille_tx: mpsc::Sender<Array2<u8>>,
+  pub keycode_rx: mpsc::Receiver<Keycode>
+}
+struct ServerState {
+  columns: u8,
+  lines: u8,
+  braille_matrix: Array2<u8>
+}
+enum Command {
+  GetDimentions { result_tx: oneshot::Sender<(u8, u8)> },
+  SetBrailleMatrixSection { start: u16, end: u16, braille: Vec<u8>, result_tx: oneshot::Sender<()> }
+}
 async fn read_packet<T: AsyncRead + Unpin>(reader: &mut T) -> ClientPacket {
   let mut buffer: Vec<u8> = vec![0; 4];
   reader.read_exact(&mut buffer).await.unwrap();
@@ -24,7 +42,22 @@ async fn write_packet<T: AsyncWrite + Unpin>(packet: ServerPacket, writer: &mut 
   writer.write(&data).await.unwrap();
   writer.flush().await.unwrap();
 }
-async fn handle_connection(mut socket: TcpStream, auth_key: Option<String>) {
+async fn handle_state(columns: u8, lines: u8, braille_tx: mpsc::Sender<Array2<u8>>, mut command_rx: mpsc::Receiver<Command>) {
+  let mut state = ServerState { columns, lines, braille_matrix: Array2::zeros((lines as usize, columns as usize)) };
+  while let Some(command) = command_rx.recv().await {
+    match command {
+      Command::GetDimentions { result_tx } => result_tx.send((state.columns, state.lines)).unwrap(),
+      Command::SetBrailleMatrixSection { start, end, braille, result_tx } => {
+        let mut braille_cells = state.braille_matrix.view_mut().into_shape_with_order(lines as usize*columns as usize).unwrap();
+        let mut slice = braille_cells.slice_mut(s![start as i32..end as i32]);
+        slice.assign(&Array1::from(braille));
+        braille_tx.send(state.braille_matrix.clone()).await.unwrap();
+        result_tx.send(()).unwrap();
+      }
+    }
+  }
+}
+async fn handle_connection(mut socket: TcpStream, auth_key: Option<String>, command_tx: mpsc::Sender<Command>) {
   write_packet(ServerPacket { data: ServerPacketData::Version { version: 8 }}, &mut socket).await;
   let version_packet = read_packet(&mut socket).await;
   match version_packet.data {
@@ -63,13 +96,18 @@ async fn handle_connection(mut socket: TcpStream, auth_key: Option<String>) {
     }
   }
 }
-pub async fn start(port: u16, auth_key: Option<String>) {
+pub async fn start(port: u16, auth_key: Option<String>, backend: ServerBackend) {
   let listener = TcpListener::bind(SocketAddrV4::new(Ipv4Addr::new(0, 0, 0, 0), port)).await.unwrap();
+  let (command_tx, command_rx) = mpsc::channel(32);
+  tokio::spawn(async move {
+    handle_state(backend.columns, backend.lines, backend.braille_tx, command_rx).await;
+  });
   loop {
     let (socket, _) = listener.accept().await.unwrap();
     let auth_key2 = auth_key.clone();
+    let command_tx2 = command_tx.clone();
     tokio::spawn(async move {
-      handle_connection(socket, auth_key2).await;
+      handle_connection(socket, auth_key2, command_tx2).await;
     });
   }
 }
