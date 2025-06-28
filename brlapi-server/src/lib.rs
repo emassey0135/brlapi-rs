@@ -59,22 +59,25 @@ async fn handle_state(columns: u8, lines: u8, braille_tx: mpsc::Sender<Array2<u8
       Command::SetCursor { position, result_tx } => {
         state.cursor_position = position;
         if let Some(position) = position {
-          let mut braille_cells = state.braille_matrix.view_mut().into_shape_with_order(lines as usize*columns as usize).unwrap();
+          let mut new_matrix = state.braille_matrix.clone();
+          let mut braille_cells = new_matrix.view_mut().into_shape_with_order(lines as usize*columns as usize).unwrap();
           let cell = braille_cells.get_mut(position as usize).unwrap();
           *cell |= 192;
-          braille_tx.send(state.braille_matrix.clone()).await.unwrap();
+          braille_tx.send(new_matrix).await.unwrap();
         };
         result_tx.send(()).unwrap();
-      }
+      },
       Command::SetBrailleMatrixSection { start, length, braille, result_tx } => {
         let mut braille_cells = state.braille_matrix.view_mut().into_shape_with_order(lines as usize*columns as usize).unwrap();
         let mut slice = braille_cells.slice_mut(s![start as i32..(start+length) as i32]);
         slice.assign(&braille);
+        let mut new_matrix = state.braille_matrix.clone();
         if let Some(cursor_position) = state.cursor_position {
+          let mut braille_cells = new_matrix.view_mut().into_shape_with_order(lines as usize*columns as usize).unwrap();
           let cell = braille_cells.get_mut(cursor_position as usize).unwrap();
           *cell |= 192;
         };
-        braille_tx.send(state.braille_matrix.clone()).await.unwrap();
+        braille_tx.send(new_matrix).await.unwrap();
         result_tx.send(()).unwrap();
       }
     }
