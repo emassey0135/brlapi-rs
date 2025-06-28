@@ -114,6 +114,12 @@ async fn handle_connection(mut socket: TcpStream, auth_key: Option<String>, comm
             .collect::<Vec<u8>>());
           braille_cells.assign(&Array1::from(cells));
         };
+        if let Some(and) = and {
+          braille_cells &= &Array1::from(and);
+        };
+        if let Some(or) = or {
+          braille_cells |= &Array1::from(or);
+        };
         let (result_tx, result_rx) = oneshot::channel();
         let start = (region.0)-1;
         let length = region.1;
