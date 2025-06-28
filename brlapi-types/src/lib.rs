@@ -249,16 +249,12 @@ pub enum ClientPacketData {
   #[br(pre_assert(ty == PacketType::IgnoreKeyRanges))]
   IgnoreKeyRanges {
     #[br(count(size/16))]
-    #[br(map(|ranges: Vec<(u64, u64)>| ranges.into_iter().map(|range| (Keycode::from_u64(range.0), Keycode::from_u64(range.1))).collect()))]
-    #[bw(map(|ranges| ranges.into_iter().map(|range| (range.0.to_owned().into_u64(), range.1.to_owned().into_u64())).collect::<Vec<(u64, u64)>>()))]
-    ranges: Vec<(Keycode, Keycode)>,
+    ranges: Vec<(u64, u64)>,
   },
   #[br(pre_assert(ty == PacketType::AcceptKeyRanges))]
   AcceptKeyRanges {
     #[br(count(size/16))]
-    #[br(map(|ranges: Vec<(u64, u64)>| ranges.into_iter().map(|range| (Keycode::from_u64(range.0), Keycode::from_u64(range.1))).collect()))]
-    #[bw(map(|ranges| ranges.into_iter().map(|range| (range.0.to_owned().into_u64(), range.1.to_owned().into_u64())).collect::<Vec<(u64, u64)>>()))]
-    ranges: Vec<(Keycode, Keycode)>,
+    ranges: Vec<(u64, u64)>,
   },
   #[br(pre_assert(ty == PacketType::EnterRawMode))]
   #[brw(magic(0xdead_beefu32))]
