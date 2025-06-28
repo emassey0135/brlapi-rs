@@ -1,6 +1,7 @@
 use binrw::{BinRead, BinWrite};
 use brlapi_types::{AuthType, ClientPacket, ClientPacketData, ErrorCode, ServerPacket, ServerPacketData};
 use brlapi_types::keycode::Keycode;
+use louis::Louis;
 use ndarray::{Array1, Array2, s};
 use std::io::Cursor;
 use std::net::{Ipv4Addr, SocketAddrV4};
@@ -8,6 +9,9 @@ use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{mpsc, oneshot};
 
+thread_local! {
+  static LOUIS: Louis = Louis::new().unwrap();
+}
 pub struct ServerBackend {
   pub columns: u8,
   pub lines: u8,
@@ -21,7 +25,7 @@ struct ServerState {
 }
 enum Command {
   GetDimentions { result_tx: oneshot::Sender<(u8, u8)> },
-  SetBrailleMatrixSection { start: u16, end: u16, braille: Vec<u8>, result_tx: oneshot::Sender<()> }
+  SetBrailleMatrixSection { start: u16, length: u16, braille: Array1<u8>, result_tx: oneshot::Sender<()> }
 }
 async fn read_packet<T: AsyncRead + Unpin>(reader: &mut T) -> Result<ClientPacket, std::io::Error> {
   let mut buffer: Vec<u8> = vec![0; 4];
@@ -48,10 +52,10 @@ async fn handle_state(columns: u8, lines: u8, braille_tx: mpsc::Sender<Array2<u8
   while let Some(command) = command_rx.recv().await {
     match command {
       Command::GetDimentions { result_tx } => result_tx.send((state.columns, state.lines)).unwrap(),
-      Command::SetBrailleMatrixSection { start, end, braille, result_tx } => {
+      Command::SetBrailleMatrixSection { start, length, braille, result_tx } => {
         let mut braille_cells = state.braille_matrix.view_mut().into_shape_with_order(lines as usize*columns as usize).unwrap();
-        let mut slice = braille_cells.slice_mut(s![start as i32..end as i32]);
-        slice.assign(&Array1::from(braille));
+        let mut slice = braille_cells.slice_mut(s![start as i32..(start+length) as i32]);
+        slice.assign(&braille);
         braille_tx.send(state.braille_matrix.clone()).await.unwrap();
         result_tx.send(()).unwrap();
       }
@@ -98,7 +102,27 @@ async fn handle_connection(mut socket: TcpStream, auth_key: Option<String>, comm
   }
   loop {
     let packet = read_packet(&mut socket).await?;
-    write_packet(ServerPacket { data: ServerPacketData::Ack }, &mut socket).await?;
+    match packet.data {
+      ClientPacketData::Write { display_number, region, text, and, or, cursor, charset } => {
+        let text = text.as_ref().map(|text| String::from_utf8_lossy(text));
+        let region = region.unwrap_or((1, (text.as_ref().unwrap().len()) as u32));
+        let mut braille_cells: Array1<u8> = Array1::zeros(region.1 as usize);
+        if let Some(text) = text {
+          let cells = LOUIS.with(|louis| louis.translate_simple("en-us-comp8.ctb", &text, false, louis::modes::DOTS_UNICODE)
+            .chars()
+            .map(|char| (u32::from(char)-10240).try_into().unwrap())
+            .collect::<Vec<u8>>());
+          braille_cells.assign(&Array1::from(cells));
+        };
+        let (result_tx, result_rx) = oneshot::channel();
+        let start = (region.0)-1;
+        let length = region.1;
+        command_tx.send(Command::SetBrailleMatrixSection { start: start as u16, length: length as u16, braille: braille_cells, result_tx }).await.unwrap();
+        result_rx.await.unwrap();
+        write_packet(ServerPacket { data: ServerPacketData::Ack }, &mut socket).await?;
+      },
+      _ => write_packet(ServerPacket { data: ServerPacketData::Ack }, &mut socket).await?
+    };
   }
 }
 pub async fn start(port: u16, auth_key: Option<String>, backend: ServerBackend) {
