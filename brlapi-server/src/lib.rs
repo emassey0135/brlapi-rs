@@ -37,7 +37,9 @@ async fn read_packet<T: AsyncRead + Unpin>(reader: &mut T) -> Result<ClientPacke
   reader.read_exact(&mut buffer[4..]).await?;
   println!("Packet read: {:?}", &buffer);
   let mut cursor = Cursor::new(buffer);
-  Ok(ClientPacket::read(&mut cursor).unwrap())
+  let packet = ClientPacket::read(&mut cursor).unwrap();
+  println!("{:?}", packet);
+  Ok(packet)
 }
 async fn write_packet<T: AsyncWrite + Unpin>(packet: ServerPacket, writer: &mut T) -> Result<(), std::io::Error> {
   let mut cursor = Cursor::new(Vec::new());
