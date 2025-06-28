@@ -21,10 +21,12 @@ pub struct ServerBackend {
 struct ServerState {
   columns: u8,
   lines: u8,
+  cursor_position: Option<u16>,
   braille_matrix: Array2<u8>
 }
 enum Command {
   GetDimentions { result_tx: oneshot::Sender<(u8, u8)> },
+  SetCursor { position: Option<u16>, result_tx: oneshot::Sender<()> },
   SetBrailleMatrixSection { start: u16, length: u16, braille: Array1<u8>, result_tx: oneshot::Sender<()> }
 }
 async fn read_packet<T: AsyncRead + Unpin>(reader: &mut T) -> Result<ClientPacket, std::io::Error> {
@@ -48,14 +50,28 @@ async fn write_packet<T: AsyncWrite + Unpin>(packet: ServerPacket, writer: &mut 
   Ok(())
 }
 async fn handle_state(columns: u8, lines: u8, braille_tx: mpsc::Sender<Array2<u8>>, mut command_rx: mpsc::Receiver<Command>) {
-  let mut state = ServerState { columns, lines, braille_matrix: Array2::zeros((lines as usize, columns as usize)) };
+  let mut state = ServerState { columns, lines, cursor_position: None, braille_matrix: Array2::zeros((lines as usize, columns as usize)) };
   while let Some(command) = command_rx.recv().await {
     match command {
       Command::GetDimentions { result_tx } => result_tx.send((state.columns, state.lines)).unwrap(),
+      Command::SetCursor { position, result_tx } => {
+        state.cursor_position = position;
+        if let Some(position) = position {
+          let mut braille_cells = state.braille_matrix.view_mut().into_shape_with_order(lines as usize*columns as usize).unwrap();
+          let cell = braille_cells.get_mut(position as usize).unwrap();
+          *cell |= 192;
+          braille_tx.send(state.braille_matrix.clone()).await.unwrap();
+        };
+        result_tx.send(()).unwrap();
+      }
       Command::SetBrailleMatrixSection { start, length, braille, result_tx } => {
         let mut braille_cells = state.braille_matrix.view_mut().into_shape_with_order(lines as usize*columns as usize).unwrap();
         let mut slice = braille_cells.slice_mut(s![start as i32..(start+length) as i32]);
         slice.assign(&braille);
+        if let Some(cursor_position) = state.cursor_position {
+          let cell = braille_cells.get_mut(cursor_position as usize).unwrap();
+          *cell |= 192;
+        };
         braille_tx.send(state.braille_matrix.clone()).await.unwrap();
         result_tx.send(()).unwrap();
       }
@@ -105,7 +121,11 @@ async fn handle_connection(mut socket: TcpStream, auth_key: Option<String>, comm
     match packet.data {
       ClientPacketData::Write { display_number, region, text, and, or, cursor, charset } => {
         let text = text.as_ref().map(|text| String::from_utf8_lossy(text));
-        let region = region.unwrap_or((1, (text.as_ref().unwrap().len()) as u32));
+        let region = match (region, text.as_ref()) {
+          (Some((start, length)), _) => (start-1, length),
+          (None, Some(text)) => (0, text.len() as u32),
+          (None, None) => (0, 0)
+        };
         let mut braille_cells: Array1<u8> = Array1::zeros(region.1 as usize);
         if let Some(text) = text {
           let cells = LOUIS.with(|louis| louis.translate_simple("en-us-comp8.ctb", &text, false, louis::modes::DOTS_UNICODE)
@@ -120,12 +140,22 @@ async fn handle_connection(mut socket: TcpStream, auth_key: Option<String>, comm
         if let Some(or) = or {
           braille_cells |= &Array1::from(or);
         };
-        let (result_tx, result_rx) = oneshot::channel();
-        let start = (region.0)-1;
-        let length = region.1;
-        command_tx.send(Command::SetBrailleMatrixSection { start: start as u16, length: length as u16, braille: braille_cells, result_tx }).await.unwrap();
-        result_rx.await.unwrap();
-        write_packet(ServerPacket { data: ServerPacketData::Ack }, &mut socket).await?;
+        if let Some(cursor) = cursor {
+          let (result_tx, result_rx) = oneshot::channel();
+          let position = if cursor==0 {
+            None
+          }
+          else {
+            Some((cursor-1) as u16)
+          };
+          command_tx.send(Command::SetCursor { position, result_tx }).await.unwrap();
+          result_rx.await.unwrap();
+        };
+        if region.1 != 0 {
+          let (result_tx, result_rx) = oneshot::channel();
+          command_tx.send(Command::SetBrailleMatrixSection { start: region.0 as u16, length: region.1 as u16, braille: braille_cells, result_tx }).await.unwrap();
+          result_rx.await.unwrap();
+        };
       },
       _ => write_packet(ServerPacket { data: ServerPacketData::Ack }, &mut socket).await?
     };
