@@ -118,6 +118,9 @@ async fn handle_connection(mut socket: TcpStream, auth_key: Option<String>, comm
       }
     }
   }
+  let (result_tx, result_rx) = oneshot::channel();
+  command_tx.send(Command::GetDimentions { result_tx }).await.unwrap();
+  let (columns, lines) = result_rx.await.unwrap();
   loop {
     let packet = read_packet(&mut socket).await?;
     match packet.data {
@@ -159,6 +162,7 @@ async fn handle_connection(mut socket: TcpStream, auth_key: Option<String>, comm
           result_rx.await.unwrap();
         };
       },
+      ClientPacketData::GetDisplaySize => write_packet(ServerPacket { data: ServerPacketData::GetDisplaySize { width: columns as u32, height: lines as u32 }}, &mut socket).await?,
       _ => write_packet(ServerPacket { data: ServerPacketData::Ack }, &mut socket).await?
     };
   }
