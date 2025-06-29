@@ -58,13 +58,13 @@ async fn handle_state(columns: u8, lines: u8, braille_tx: mpsc::Sender<Array2<u8
       Command::GetDimentions { result_tx } => result_tx.send((state.columns, state.lines)).unwrap(),
       Command::SetCursor { position, result_tx } => {
         state.cursor_position = position;
+        let mut new_matrix = state.braille_matrix.clone();
         if let Some(position) = position {
-          let mut new_matrix = state.braille_matrix.clone();
           let mut braille_cells = new_matrix.view_mut().into_shape_with_order(lines as usize*columns as usize).unwrap();
           let cell = braille_cells.get_mut(position as usize).unwrap();
           *cell |= 192;
-          braille_tx.send(new_matrix).await.unwrap();
         };
+        braille_tx.send(new_matrix).await.unwrap();
         result_tx.send(()).unwrap();
       },
       Command::SetBrailleMatrixSection { start, length, braille, result_tx } => {
