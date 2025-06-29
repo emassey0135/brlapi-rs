@@ -5,13 +5,11 @@ use louis::Louis;
 use ndarray::{Array1, Array2, s};
 use std::io::Cursor;
 use std::net::{Ipv4Addr, SocketAddrV4};
+use std::thread;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{mpsc, oneshot};
 
-thread_local! {
-  static LOUIS: Louis = Louis::new().unwrap();
-}
 pub struct ServerBackend {
   pub columns: u8,
   pub lines: u8,
@@ -28,6 +26,11 @@ enum Command {
   GetDimentions { result_tx: oneshot::Sender<(u8, u8)> },
   SetCursor { position: Option<u16>, result_tx: oneshot::Sender<()> },
   SetBrailleMatrixSection { start: u16, length: u16, braille: Array1<u8>, result_tx: oneshot::Sender<()> }
+}
+struct LouisRequest {
+  table: String,
+  text: String,
+  result_tx: oneshot::Sender<String>
 }
 async fn read_packet<T: AsyncRead + Unpin>(reader: &mut T) -> Result<ClientPacket, std::io::Error> {
   let mut buffer: Vec<u8> = vec![0; 4];
@@ -50,6 +53,13 @@ async fn write_packet<T: AsyncWrite + Unpin>(packet: ServerPacket, writer: &mut 
   writer.write(&data).await?;
   writer.flush().await?;
   Ok(())
+}
+fn louis_runner(mut request_rx: mpsc::Receiver<LouisRequest>) {
+  let louis = Louis::new().unwrap();
+  while let Some(request) = request_rx.blocking_recv() {
+    let result = louis.translate_simple(&request.table, &request.text, false, ::louis::modes::DOTS_UNICODE);
+    request.result_tx.send(result).unwrap();
+  }
 }
 async fn handle_state(columns: u8, lines: u8, braille_tx: mpsc::Sender<Array2<u8>>, mut command_rx: mpsc::Receiver<Command>) {
   let mut state = ServerState { columns, lines, cursor_position: None, braille_matrix: Array2::zeros((lines as usize, columns as usize)) };
@@ -85,7 +95,7 @@ async fn handle_state(columns: u8, lines: u8, braille_tx: mpsc::Sender<Array2<u8
     }
   }
 }
-async fn handle_connection(mut socket: TcpStream, auth_key: Option<String>, command_tx: mpsc::Sender<Command>) -> Result<(), std::io::Error> {
+async fn handle_connection(mut socket: TcpStream, auth_key: Option<String>, louis_tx: mpsc::Sender<LouisRequest>, command_tx: mpsc::Sender<Command>) -> Result<(), std::io::Error> {
   write_packet(ServerPacket { data: ServerPacketData::Version { version: 8 }}, &mut socket).await?;
   let version_packet = read_packet(&mut socket).await?;
   match version_packet.data {
@@ -138,10 +148,12 @@ async fn handle_connection(mut socket: TcpStream, auth_key: Option<String>, comm
         };
         let mut braille_cells: Array1<u8> = Array1::zeros(region.1 as usize);
         if let Some(text) = text {
-          let cells = LOUIS.with(|louis| louis.translate_simple("en-us-comp8.ctb", &text, false, louis::modes::DOTS_UNICODE)
+          let (result_tx, result_rx) = oneshot::channel();
+          louis_tx.send(LouisRequest { table: "en-us-comp8.ctb".to_owned(), text: text.to_string(), result_tx }).await.unwrap();
+          let cells = result_rx.await.unwrap()
             .chars()
             .map(|char| (u32::from(char)-10240).try_into().unwrap())
-            .collect::<Vec<u8>>());
+            .collect::<Vec<u8>>();
           braille_cells.assign(&Array1::from(cells));
         };
         if let Some(and) = and {
@@ -178,12 +190,17 @@ pub async fn start(port: u16, auth_key: Option<String>, backend: ServerBackend) 
   tokio::spawn(async move {
     handle_state(backend.columns, backend.lines, backend.braille_tx, command_rx).await;
   });
+  let (louis_tx, louis_rx) = mpsc::channel(32);
+  thread::spawn(move || {
+    louis_runner(louis_rx)
+  });
   loop {
     let (socket, _) = listener.accept().await.unwrap();
     let auth_key2 = auth_key.clone();
+    let louis_tx2 = louis_tx.clone();
     let command_tx2 = command_tx.clone();
     tokio::spawn(async move {
-      let _ = handle_connection(socket, auth_key2, command_tx2).await;
+      let _ = handle_connection(socket, auth_key2, louis_tx2, command_tx2).await;
     });
   }
 }
