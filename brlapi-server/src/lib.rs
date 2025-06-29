@@ -53,6 +53,8 @@ async fn write_packet<T: AsyncWrite + Unpin>(packet: ServerPacket, writer: &mut 
 }
 async fn handle_state(columns: u8, lines: u8, braille_tx: mpsc::Sender<Array2<u8>>, mut command_rx: mpsc::Receiver<Command>) {
   let mut state = ServerState { columns, lines, cursor_position: None, braille_matrix: Array2::zeros((lines as usize, columns as usize)) };
+  let new_matrix = state.braille_matrix.clone();
+  braille_tx.send(new_matrix).await.unwrap();
   while let Some(command) = command_rx.recv().await {
     match command {
       Command::GetDimentions { result_tx } => result_tx.send((state.columns, state.lines)).unwrap(),
