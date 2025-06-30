@@ -1,6 +1,7 @@
 use binrw::{BinRead, BinWrite};
 use brlapi_types::{AuthType, ClientPacket, ClientPacketData, ErrorCode, ServerPacket, ServerPacketData};
 use brlapi_types::keycode::Keycode;
+use iconv_native::decode_lossy;
 use louis::Louis;
 use ndarray::{Array1, Array2, s};
 use std::io::Cursor;
@@ -140,7 +141,11 @@ async fn handle_connection(mut socket: TcpStream, auth_key: Option<String>, loui
     let packet = read_packet(&mut socket).await?;
     match packet.data {
       ClientPacketData::Write { display_number, region, text, and, or, cursor, charset } => {
-        let text = text.as_ref().map(|text| String::from_utf8_lossy(text));
+        let text = match (text, charset) {
+          (None, _) => None,
+          (Some(text), None) => Some(String::from_utf8_lossy(&text).to_string()),
+          (Some(text), Some(charset)) => Some(decode_lossy(&text, &String::from_utf8_lossy(&charset)).unwrap())
+        };
         let region = match (region, text.as_ref()) {
           (Some((start, length)), _) => (start-1, length),
           (None, Some(text)) => (0, text.len() as u32),
