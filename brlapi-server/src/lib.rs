@@ -1,7 +1,10 @@
 use binrw::{BinRead, BinWrite};
 use brlapi_types::{AuthType, ClientPacket, ClientPacketData, ErrorCode, ServerPacket, ServerPacketData};
 use brlapi_types::keycode::Keycode;
+#[cfg(feature = "platform_iconv")]
 use iconv_native::decode_lossy;
+#[cfg(feature = "libiconv")]
+use iconv_native_libiconv::decode_lossy;
 use louis::Louis;
 use ndarray::{Array1, Array2, s};
 use std::io::Cursor;
