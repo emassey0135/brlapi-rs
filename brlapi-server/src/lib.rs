@@ -36,7 +36,7 @@ enum Command {
   SetBrailleMatrixSection { start: u16, length: u16, braille: Array1<u8>, result_tx: oneshot::Sender<()> }
 }
 struct LouisRequest {
-  table: String,
+  tables: String,
   text: String,
   result_tx: oneshot::Sender<String>
 }
@@ -65,7 +65,7 @@ async fn write_packet<T: AsyncWrite + Unpin>(packet: ServerPacket, writer: &mut 
 fn louis_runner(mut request_rx: mpsc::Receiver<LouisRequest>) {
   let louis = Louis::new().unwrap();
   while let Some(request) = request_rx.blocking_recv() {
-    let result = louis.translate_simple(&request.table, &request.text, false, ::louis::modes::DOTS_UNICODE);
+    let result = louis.translate_simple(&request.tables, &request.text, false, ::louis::modes::DOTS_UNICODE);
     request.result_tx.send(result).unwrap();
   }
 }
@@ -169,7 +169,7 @@ async fn handle_connection(mut socket: TcpStream, auth_key: Option<String>, loui
         let mut braille_cells: Array1<u8> = Array1::zeros(region.1 as usize);
         if let Some(text) = text {
           let (result_tx, result_rx) = oneshot::channel();
-          louis_tx.send(LouisRequest { table: "en-us-comp8.ctb".to_owned(), text: text.to_string(), result_tx }).await.unwrap();
+          louis_tx.send(LouisRequest { tables: "en-us-comp8.ctb,braille-patterns.cti".to_owned(), text: text.to_string(), result_tx }).await.unwrap();
           let cells = result_rx.await.unwrap()
             .chars()
             .map(|char| (u32::from(char)-10240).try_into().unwrap())
