@@ -12,6 +12,8 @@ use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{mpsc, oneshot};
 
 pub struct ServerBackend {
+  pub driver_name: String,
+  pub model_id: String,
   pub columns: u8,
   pub lines: u8,
   pub braille_tx: mpsc::Sender<Array2<u8>>,
@@ -24,6 +26,8 @@ struct ServerState {
   braille_matrix: Array2<u8>
 }
 enum Command {
+  GetDriverName { result_tx: oneshot::Sender<String> },
+  GetModelId { result_tx: oneshot::Sender<String> },
   GetDimentions { result_tx: oneshot::Sender<(u8, u8)> },
   SetCursor { position: Option<u16>, result_tx: oneshot::Sender<()> },
   SetBrailleMatrixSection { start: u16, length: u16, braille: Array1<u8>, result_tx: oneshot::Sender<()> }
@@ -62,35 +66,37 @@ fn louis_runner(mut request_rx: mpsc::Receiver<LouisRequest>) {
     request.result_tx.send(result).unwrap();
   }
 }
-async fn handle_state(columns: u8, lines: u8, braille_tx: mpsc::Sender<Array2<u8>>, mut command_rx: mpsc::Receiver<Command>) {
-  let mut state = ServerState { columns, lines, cursor_position: None, braille_matrix: Array2::zeros((lines as usize, columns as usize)) };
+async fn handle_state(backend: ServerBackend, mut command_rx: mpsc::Receiver<Command>) {
+  let mut state = ServerState { columns: backend.columns, lines: backend.lines, cursor_position: None, braille_matrix: Array2::zeros((backend.lines as usize, backend.columns as usize)) };
   let new_matrix = state.braille_matrix.clone();
-  braille_tx.send(new_matrix).await.unwrap();
+  backend.braille_tx.send(new_matrix).await.unwrap();
   while let Some(command) = command_rx.recv().await {
     match command {
+      Command::GetDriverName { result_tx } => result_tx.send(backend.driver_name.clone()).unwrap(),
+      Command::GetModelId { result_tx } => result_tx.send(backend.model_id.clone()).unwrap(),
       Command::GetDimentions { result_tx } => result_tx.send((state.columns, state.lines)).unwrap(),
       Command::SetCursor { position, result_tx } => {
         state.cursor_position = position;
         let mut new_matrix = state.braille_matrix.clone();
         if let Some(position) = position {
-          let mut braille_cells = new_matrix.view_mut().into_shape_with_order(lines as usize*columns as usize).unwrap();
+          let mut braille_cells = new_matrix.view_mut().into_shape_with_order(state.lines as usize*state.columns as usize).unwrap();
           let cell = braille_cells.get_mut(position as usize).unwrap();
           *cell |= 192;
         };
-        braille_tx.send(new_matrix).await.unwrap();
+        backend.braille_tx.send(new_matrix).await.unwrap();
         result_tx.send(()).unwrap();
       },
       Command::SetBrailleMatrixSection { start, length, braille, result_tx } => {
-        let mut braille_cells = state.braille_matrix.view_mut().into_shape_with_order(lines as usize*columns as usize).unwrap();
+        let mut braille_cells = state.braille_matrix.view_mut().into_shape_with_order(state.lines as usize*state.columns as usize).unwrap();
         let mut slice = braille_cells.slice_mut(s![start as i32..(start+length) as i32]);
         slice.assign(&braille);
         let mut new_matrix = state.braille_matrix.clone();
         if let Some(cursor_position) = state.cursor_position {
-          let mut braille_cells = new_matrix.view_mut().into_shape_with_order(lines as usize*columns as usize).unwrap();
+          let mut braille_cells = new_matrix.view_mut().into_shape_with_order(state.lines as usize*state.columns as usize).unwrap();
           let cell = braille_cells.get_mut(cursor_position as usize).unwrap();
           *cell |= 192;
         };
-        braille_tx.send(new_matrix).await.unwrap();
+        backend.braille_tx.send(new_matrix).await.unwrap();
         result_tx.send(()).unwrap();
       }
     }
@@ -134,6 +140,12 @@ async fn handle_connection(mut socket: TcpStream, auth_key: Option<String>, loui
       }
     }
   }
+  let (result_tx, result_rx) = oneshot::channel();
+  command_tx.send(Command::GetDriverName { result_tx }).await.unwrap();
+  let driver_name = result_rx.await.unwrap();
+  let (result_tx, result_rx) = oneshot::channel();
+  command_tx.send(Command::GetModelId { result_tx }).await.unwrap();
+  let model_id = result_rx.await.unwrap();
   let (result_tx, result_rx) = oneshot::channel();
   command_tx.send(Command::GetDimentions { result_tx }).await.unwrap();
   let (columns, lines) = result_rx.await.unwrap();
@@ -184,6 +196,8 @@ async fn handle_connection(mut socket: TcpStream, auth_key: Option<String>, loui
           result_rx.await.unwrap();
         };
       },
+      ClientPacketData::GetDriverName => write_packet(ServerPacket { data: ServerPacketData::GetDriverName { driver: driver_name.clone().into() }}, &mut socket).await?,
+      ClientPacketData::GetModelId => write_packet(ServerPacket { data: ServerPacketData::GetModelId { model: model_id.clone().into() }}, &mut socket).await?,
       ClientPacketData::GetDisplaySize => write_packet(ServerPacket { data: ServerPacketData::GetDisplaySize { width: columns as u32, height: lines as u32 }}, &mut socket).await?,
       _ => write_packet(ServerPacket { data: ServerPacketData::Ack }, &mut socket).await?
     };
@@ -193,7 +207,7 @@ pub async fn start(port: u16, auth_key: Option<String>, backend: ServerBackend) 
   let listener = TcpListener::bind(SocketAddrV4::new(Ipv4Addr::new(0, 0, 0, 0), port)).await.unwrap();
   let (command_tx, command_rx) = mpsc::channel(32);
   tokio::spawn(async move {
-    handle_state(backend.columns, backend.lines, backend.braille_tx, command_rx).await;
+    handle_state(backend, command_rx).await;
   });
   let (louis_tx, louis_rx) = mpsc::channel(32);
   thread::spawn(move || {
