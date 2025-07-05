@@ -9,10 +9,11 @@ use louis::Louis;
 use ndarray::{Array1, Array2, s};
 use std::io::Cursor;
 use std::net::{Ipv4Addr, SocketAddrV4};
+use std::sync::Arc;
 use std::thread;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
-use tokio::sync::{mpsc, oneshot};
+use tokio::sync::{mpsc, Mutex, oneshot};
 
 pub struct ServerBackend {
   pub driver_name: String,
@@ -33,7 +34,8 @@ enum Command {
   GetModelId { result_tx: oneshot::Sender<String> },
   GetDimentions { result_tx: oneshot::Sender<(u8, u8)> },
   SetCursor { position: Option<u16>, result_tx: oneshot::Sender<()> },
-  SetBrailleMatrixSection { start: u16, length: u16, braille: Array1<u8>, result_tx: oneshot::Sender<()> }
+  SetBrailleMatrixSection { start: u16, length: u16, braille: Array1<u8>, result_tx: oneshot::Sender<()> },
+  SetKeycodeHandler { keycode_tx: mpsc::Sender<Keycode> },
 }
 struct LouisRequest {
   tables: String,
@@ -73,6 +75,16 @@ async fn handle_state(backend: ServerBackend, mut command_rx: mpsc::Receiver<Com
   let mut state = ServerState { columns: backend.columns, lines: backend.lines, cursor_position: None, braille_matrix: Array2::zeros((backend.lines as usize, backend.columns as usize)) };
   let new_matrix = state.braille_matrix.clone();
   backend.braille_tx.send(new_matrix).await.unwrap();
+  let keycode_handler: Arc<Mutex<Option<mpsc::Sender<Keycode>>>> = Arc::new(Mutex::new(None));
+  let keycode_handler2 = keycode_handler.clone();
+  let mut keycode_rx = backend.keycode_rx;
+  tokio::spawn(async move {
+    while let Some(keycode) = keycode_rx.recv().await {
+      if let Some(keycode_tx) = keycode_handler2.lock().await.as_ref() {
+        let _ = keycode_tx.send(keycode).await;
+      }
+    }
+  });
   while let Some(command) = command_rx.recv().await {
     match command {
       Command::GetDriverName { result_tx } => result_tx.send(backend.driver_name.clone()).unwrap(),
@@ -101,7 +113,8 @@ async fn handle_state(backend: ServerBackend, mut command_rx: mpsc::Receiver<Com
         };
         backend.braille_tx.send(new_matrix).await.unwrap();
         result_tx.send(()).unwrap();
-      }
+      },
+      Command::SetKeycodeHandler { keycode_tx } => *keycode_handler.lock().await = Some(keycode_tx),
     }
   }
 }
@@ -152,8 +165,18 @@ async fn handle_connection(mut socket: TcpStream, auth_key: Option<String>, loui
   let (result_tx, result_rx) = oneshot::channel();
   command_tx.send(Command::GetDimentions { result_tx }).await.unwrap();
   let (columns, lines) = result_rx.await.unwrap();
+  let socket = Arc::new(Mutex::new(socket));
+  let socket2 = socket.clone();
+  let (keycode_tx, mut keycode_rx) = mpsc::channel(32);
+  command_tx.send(Command::SetKeycodeHandler { keycode_tx }).await.unwrap();
+  tokio::spawn(async move {
+    while let Some(keycode) = keycode_rx.recv().await {
+      write_packet(ServerPacket { data: ServerPacketData::Key { key: keycode }}, &mut *socket2.lock().await).await.unwrap();
+    }
+  });
   loop {
-    let packet = read_packet(&mut socket).await?;
+    let mut socket = socket.lock().await;
+    let packet = read_packet(&mut *socket).await?;
     match packet.data {
       ClientPacketData::Write { display_number, region, text, and, or, cursor, charset } => {
         let text = match (text, charset) {
@@ -199,10 +222,10 @@ async fn handle_connection(mut socket: TcpStream, auth_key: Option<String>, loui
           result_rx.await.unwrap();
         };
       },
-      ClientPacketData::GetDriverName => write_packet(ServerPacket { data: ServerPacketData::GetDriverName { driver: driver_name.clone().into() }}, &mut socket).await?,
-      ClientPacketData::GetModelId => write_packet(ServerPacket { data: ServerPacketData::GetModelId { model: model_id.clone().into() }}, &mut socket).await?,
-      ClientPacketData::GetDisplaySize => write_packet(ServerPacket { data: ServerPacketData::GetDisplaySize { width: columns as u32, height: lines as u32 }}, &mut socket).await?,
-      _ => write_packet(ServerPacket { data: ServerPacketData::Ack }, &mut socket).await?
+      ClientPacketData::GetDriverName => write_packet(ServerPacket { data: ServerPacketData::GetDriverName { driver: driver_name.clone().into() }}, &mut *socket).await?,
+      ClientPacketData::GetModelId => write_packet(ServerPacket { data: ServerPacketData::GetModelId { model: model_id.clone().into() }}, &mut *socket).await?,
+      ClientPacketData::GetDisplaySize => write_packet(ServerPacket { data: ServerPacketData::GetDisplaySize { width: columns as u32, height: lines as u32 }}, &mut *socket).await?,
+      _ => write_packet(ServerPacket { data: ServerPacketData::Ack }, &mut *socket).await?
     };
   }
 }
