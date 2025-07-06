@@ -21,7 +21,8 @@ pub struct ServerBackend {
   pub columns: u8,
   pub lines: u8,
   pub braille_tx: mpsc::Sender<Array2<u8>>,
-  pub keycode_rx: mpsc::Receiver<Keycode>
+  pub keycode_rx: mpsc::Receiver<Keycode>,
+  pub louis_rx: mpsc::Receiver<LouisRequest>
 }
 struct ServerState {
   columns: u8,
@@ -37,9 +38,10 @@ enum Command {
   SetBrailleMatrixSection { start: u16, length: u16, braille: Array1<u8>, result_tx: oneshot::Sender<()> },
   SetKeycodeHandler { keycode_tx: mpsc::Sender<Keycode> },
 }
-struct LouisRequest {
+pub struct LouisRequest {
   tables: String,
   text: String,
+  backwards: bool,
   result_tx: oneshot::Sender<String>
 }
 async fn read_packet<T: AsyncRead + Unpin>(reader: &mut T) -> Result<ClientPacket, std::io::Error> {
@@ -67,11 +69,11 @@ async fn write_packet<T: AsyncWrite + Unpin>(packet: ServerPacket, writer: &mut 
 fn louis_runner(mut request_rx: mpsc::Receiver<LouisRequest>) {
   let louis = Louis::new().unwrap();
   while let Some(request) = request_rx.blocking_recv() {
-    let result = louis.translate_simple(&request.tables, &request.text, false, ::louis::modes::DOTS_UNICODE);
+    let result = louis.translate_simple(&request.tables, &request.text, request.backwards, ::louis::modes::DOTS_UNICODE);
     request.result_tx.send(result).unwrap();
   }
 }
-async fn handle_state(backend: ServerBackend, mut command_rx: mpsc::Receiver<Command>) {
+async fn handle_state(backend: ServerBackend, mut command_rx: mpsc::Receiver<Command>, louis_tx: mpsc::Sender<LouisRequest>) {
   let mut state = ServerState { columns: backend.columns, lines: backend.lines, cursor_position: None, braille_matrix: Array2::zeros((backend.lines as usize, backend.columns as usize)) };
   let new_matrix = state.braille_matrix.clone();
   backend.braille_tx.send(new_matrix).await.unwrap();
@@ -83,6 +85,12 @@ async fn handle_state(backend: ServerBackend, mut command_rx: mpsc::Receiver<Com
       if let Some(keycode_tx) = keycode_handler2.lock().await.as_ref() {
         let _ = keycode_tx.send(keycode).await;
       }
+    }
+  });
+  let mut louis_rx = backend.louis_rx;
+  tokio::spawn(async move {
+    while let Some(request) = louis_rx.recv().await {
+      louis_tx.send(request).await.unwrap();
     }
   });
   while let Some(command) = command_rx.recv().await {
@@ -193,7 +201,7 @@ async fn handle_connection(mut socket: TcpStream, auth_key: Option<String>, loui
         let mut braille_cells: Array1<u8> = Array1::zeros(region.1 as usize);
         if let Some(text) = text {
           let (result_tx, result_rx) = oneshot::channel();
-          louis_tx.send(LouisRequest { tables: "en-us-comp8.ctb,braille-patterns.cti".to_owned(), text: text.to_string(), result_tx }).await.unwrap();
+          louis_tx.send(LouisRequest { tables: "en-us-comp8.ctb,braille-patterns.cti".to_owned(), text: text.to_string(), backwards: false, result_tx }).await.unwrap();
           let cells = result_rx.await.unwrap()
             .chars()
             .map(|char| (u32::from(char)-10240).try_into().unwrap())
@@ -233,12 +241,13 @@ async fn handle_connection(mut socket: TcpStream, auth_key: Option<String>, loui
 pub async fn start(port: u16, auth_key: Option<String>, backend: ServerBackend) {
   let listener = TcpListener::bind(SocketAddrV4::new(Ipv4Addr::new(0, 0, 0, 0), port)).await.unwrap();
   let (command_tx, command_rx) = mpsc::channel(32);
-  tokio::spawn(async move {
-    handle_state(backend, command_rx).await;
-  });
   let (louis_tx, louis_rx) = mpsc::channel(32);
+  let louis_tx2 = louis_tx.clone();
   thread::spawn(move || {
     louis_runner(louis_rx)
+  });
+  tokio::spawn(async move {
+    handle_state(backend, command_rx, louis_tx2).await;
   });
   loop {
     let (socket, _) = listener.accept().await.unwrap();
