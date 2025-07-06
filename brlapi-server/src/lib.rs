@@ -69,7 +69,13 @@ async fn write_packet<T: AsyncWrite + Unpin>(packet: ServerPacket, writer: &mut 
 fn louis_runner(mut request_rx: mpsc::Receiver<LouisRequest>) {
   let louis = Louis::new().unwrap();
   while let Some(request) = request_rx.blocking_recv() {
-    let result = louis.translate_simple(&request.tables, &request.text, request.backwards, ::louis::modes::DOTS_UNICODE);
+    let mode = if request.backwards {
+      0
+    }
+    else {
+      ::louis::modes::DOTS_UNICODE
+    };
+    let result = louis.translate_simple(&request.tables, &request.text, request.backwards, mode);
     request.result_tx.send(result).unwrap();
   }
 }
