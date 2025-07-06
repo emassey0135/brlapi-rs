@@ -39,7 +39,7 @@ impl KeycodeFlags {
 }
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 #[repr(u8)]
-pub enum KeycodeType {
+enum KeycodeType {
   Keysym = 0,
   BrailleCommand = 1,
 }
@@ -56,7 +56,7 @@ impl KeycodeType {
 }
 #[bitfield(u64)]
 #[derive(PartialEq, Eq)]
-pub struct RawKeycode {
+struct RawKeycode {
   #[bits(29)]
   code: u32,
   #[bits(3, from = KeycodeType::from_u8, into = KeycodeType::into_u8)]
@@ -460,12 +460,12 @@ pub enum BrailleCommand {
   ExecuteHostCommand { index: u16 },
 }
 impl BrailleCommand {
-  pub fn from_u32(value: u32) -> Self {
+  fn from_u32(value: u32) -> Self {
     let bytes = value.to_be_bytes();
     let mut stream = Cursor::new(bytes);
     BrailleCommand::read(&mut stream).unwrap()
   }
-  pub fn into_u32(self) -> u32 {
+  fn into_u32(self) -> u32 {
     let mut stream = Cursor::new(Vec::new());
     self.write(&mut stream).unwrap();
     let bytes = stream.into_inner();
@@ -474,9 +474,9 @@ impl BrailleCommand {
 }
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct Keycode {
-  flags: KeycodeFlags,
-  keysym: Option<Keysym>,
-  braille_command: Option<BrailleCommand>,
+  pub flags: KeycodeFlags,
+  pub keysym: Option<Keysym>,
+  pub braille_command: Option<BrailleCommand>,
 }
 impl From<RawKeycode> for Keycode {
   fn from(keycode: RawKeycode) -> Self {
