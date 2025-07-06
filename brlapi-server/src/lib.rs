@@ -165,18 +165,19 @@ async fn handle_connection(mut socket: TcpStream, auth_key: Option<String>, loui
   let (result_tx, result_rx) = oneshot::channel();
   command_tx.send(Command::GetDimentions { result_tx }).await.unwrap();
   let (columns, lines) = result_rx.await.unwrap();
-  let socket = Arc::new(Mutex::new(socket));
-  let socket2 = socket.clone();
+  let (mut reader, writer) = socket.into_split();
+  let writer = Arc::new(Mutex::new(writer));
+  let writer2 = writer.clone();
   let (keycode_tx, mut keycode_rx) = mpsc::channel(32);
   command_tx.send(Command::SetKeycodeHandler { keycode_tx }).await.unwrap();
   tokio::spawn(async move {
     while let Some(keycode) = keycode_rx.recv().await {
-      write_packet(ServerPacket { data: ServerPacketData::Key { key: keycode }}, &mut *socket2.lock().await).await.unwrap();
+      write_packet(ServerPacket { data: ServerPacketData::Key { key: keycode }}, &mut *writer2.lock().await).await.unwrap();
     }
   });
   loop {
-    let mut socket = socket.lock().await;
-    let packet = read_packet(&mut *socket).await?;
+    let packet = read_packet(&mut reader).await?;
+    let mut writer = writer.lock().await;
     match packet.data {
       ClientPacketData::Write { display_number, region, text, and, or, cursor, charset } => {
         let text = match (text, charset) {
@@ -222,10 +223,10 @@ async fn handle_connection(mut socket: TcpStream, auth_key: Option<String>, loui
           result_rx.await.unwrap();
         };
       },
-      ClientPacketData::GetDriverName => write_packet(ServerPacket { data: ServerPacketData::GetDriverName { driver: driver_name.clone().into() }}, &mut *socket).await?,
-      ClientPacketData::GetModelId => write_packet(ServerPacket { data: ServerPacketData::GetModelId { model: model_id.clone().into() }}, &mut *socket).await?,
-      ClientPacketData::GetDisplaySize => write_packet(ServerPacket { data: ServerPacketData::GetDisplaySize { width: columns as u32, height: lines as u32 }}, &mut *socket).await?,
-      _ => write_packet(ServerPacket { data: ServerPacketData::Ack }, &mut *socket).await?
+      ClientPacketData::GetDriverName => write_packet(ServerPacket { data: ServerPacketData::GetDriverName { driver: driver_name.clone().into() }}, &mut *writer).await?,
+      ClientPacketData::GetModelId => write_packet(ServerPacket { data: ServerPacketData::GetModelId { model: model_id.clone().into() }}, &mut *writer).await?,
+      ClientPacketData::GetDisplaySize => write_packet(ServerPacket { data: ServerPacketData::GetDisplaySize { width: columns as u32, height: lines as u32 }}, &mut *writer).await?,
+      _ => write_packet(ServerPacket { data: ServerPacketData::Ack }, &mut *writer).await?
     };
   }
 }
