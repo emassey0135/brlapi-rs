@@ -39,10 +39,10 @@ enum Command {
   SetKeycodeHandler { keycode_tx: mpsc::Sender<Keycode> },
 }
 pub struct LouisRequest {
-  tables: String,
-  text: String,
-  backwards: bool,
-  result_tx: oneshot::Sender<String>
+  pub tables: String,
+  pub text: String,
+  pub backwards: bool,
+  pub result_tx: oneshot::Sender<String>
 }
 async fn read_packet<T: AsyncRead + Unpin>(reader: &mut T) -> Result<ClientPacket, std::io::Error> {
   let mut buffer: Vec<u8> = vec![0; 4];
